@@ -1,0 +1,65 @@
+# docker-compose.yml for Transmission (from holo-deck stack)
+# Strictly follows FORMATTING.md and user rules.
+version: '3.8'
+services:
+  transmission:
+    image: ${TRANSMISSION_IMAGE:-lscr.io/linuxserver/transmission:latest}
+    container_name: transmission
+    hostname: transmission
+    environment:
+      - PUID=${PUID:-1000}                   # User ID for file permissions
+      - PGID=${PGID:-1000}                   # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg}        # Timezone
+      - ADVERTISE_IP=https://${TORRENT_SERVER_IP_ADVERTISE} # Advertise IP
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:transmission # ThemePark mod
+      - TP_THEME=aquamarine                # ThemePark theme
+      - DOCKER_MODS=linuxserver/mods:transmission-floodui # Additional mods
+    volumes:
+      - ${DOCKERDIR:-home/homelab/conf}/transmission:/config                          # Config
+      - ${MEDIALIBRARY:-/mnt/pool/library}/downloads:/downloads                       # Downloads
+      - ${MEDIALIBRARY:-/mnt/pool/library}/downloads/complete:/downloads/complete     # Completed
+      - ${MEDIALIBRARY:-/mnt/pool/library}/downloads/incomplete:/downloads/incomplete # Incomplete
+      - ${MEDIALIBRARY:-/mnt/pool/library}/movies:/movies                             # Movies
+      - ${MEDIALIBRARY:-/mnt/pool/library}/tv:/tv:ro                                  # TV (read-only)
+    ports:
+      - "51413:51413"
+      - "51413:51413/udp"
+    networks:
+      - internal
+      - external
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    # labels:
+      # 📹 Logging/Monitoring
+      # log_name: "transmission"
+      # 🚀 Traefik Enablement
+      # traefik.enable: "true"
+      # traefik.docker.network: "external"
+      # 🎯 Traefik Routing/Rules
+      # traefik.http.routers.transmission-root.rule: "Host(`farmer.cityzen.co.za`) && PathPrefix(`/`)"
+      # traefik.http.routers.transmission-root.entrypoints: "https"
+      # traefik.http.routers.transmission-root.tls: "true"
+      # traefik.http.routers.transmission-root.service: "noop@internal"
+      # traefik.http.routers.transmission-root.middlewares: "redirect-to-transmission,authelia@docker,even-less-secure-headers@docker"
+      # traefik.http.middlewares.redirect-to-transmission.redirectregex.regex: "^https?://(?:[^/]+)/(?:$|\\?)"
+      # traefik.http.middlewares.redirect-to-transmission.redirectregex.replacement: "https://farmer.cityzen.co.za/transmission/web/"
+      # traefik.http.middlewares.redirect-to-transmission.redirectregex.permanent: "true"
+      # 🚪 Main transmission route
+      # traefik.http.routers.transmission.rule: "Host(`farmer.cityzen.co.za`) && PathPrefix(`/transmission`)"
+      # traefik.http.routers.transmission.entrypoints: "https"
+      # traefik.http.routers.transmission.tls: "true"
+      # traefik.http.services.transmission.loadbalancer.server.port: "9095"
+    # healthcheck:
+      # test: ["CMD", "curl", "-f", "http://localhost:9095"]
+      # interval: 30s
+      # timeout: 5s
+      # retries: 3
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

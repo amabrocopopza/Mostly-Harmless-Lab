@@ -1,0 +1,53 @@
+# docker-compose.yml for Plex (from holo-deck stack)
+# Strictly follows FORMATTING.md and user rules.
+version: '3.8'
+services:
+  plex:
+    image: "${PLEX_IMAGE:-lscr.io/linuxserver/plex:latest}"
+    container_name: plex
+    hostname: plex
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all            # Expose all NVIDIA GPUs
+      - NVIDIA_DRIVER_CAPABILITIES=all        # Enable all NVIDIA driver capabilities
+      - PUID=${PUID:-1000}                    # User ID for file permissions
+      - PGID=${PGID:-1000}                    # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg}         # Timezone
+      - PLEX_TRANSCODE_DIR=/transcode         # Transcode temp dir
+      ## - PLEX_CLAIM=${PLEX_CLAIM}           # Plex claim token (uncomment for first run)
+      - ADVERTISE_IP=https://${PLEX_SERVER_IP_ADVERTISE} # Advertise IP for clients
+      - VERSION=docker                       # Image version
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:plex # ThemePark mod
+    runtime: nvidia
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      - ${DOCKERDIR:-home/homelab/conf}/plex:/config             # Persistent Plex config
+      - ${MEDIALIBRARY:-/mnt/pool/library}:/library:ro           # Main media library (read-only)
+      - ${DOCKERDIR:-/mnt/pool/library}/transcode:/transcode     # Transcode temp files
+      - /dev/shm:/dev/shm                                        # Shared memory for transcoding
+    network_mode: host
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "32400:32400" # Plex UI
+    # labels:
+      # 📹 Logging/Monitoring
+      # log_name: "plex"  # Main app label for logging (Promtail/Loki)
+      # 🚀 Traefik Enablement
+      # traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      # traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      # traefik.http.routers.plex.tls: "true"  # Enable TLS
+      # traefik.http.routers.plex.entrypoints: "https"  # HTTPS entrypoint
+      # traefik.http.routers.plex.rule: "Host(`plex.cityzen.co.za`)"  # Domain routing rule
+      # 🛡️ Middleware
+      # traefik.http.routers.plex.middlewares: "authelia@docker,less-secure-headers@docker,no-poweredby@docker"  # Auth, relaxed headers, hide X-Powered-By
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

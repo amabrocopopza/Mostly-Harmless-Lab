@@ -1,0 +1,128 @@
+# Monitoring Suite (Loki, Promtail, Grafana, Prometheus)
+version: "3.8"
+services:
+  loki:
+    image: ${LOKI_IMAGE:-grafana/loki:latest}
+    container_name: loki
+    hostname: loki
+    volumes:
+      - ${DOCKERDIR:-/home/homelab}/monitoring/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+      - external
+    labels:
+      log_name: "loki"
+      prometheus.scrape: "true"
+      prometheus.port: "3100"
+      prometheus.path: "/metrics"
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.loki.tls: "true"
+      traefik.http.routers.loki.entrypoints: "https"
+      traefik.http.routers.loki.rule: "Host(`loki.cityzen.co.za`)"
+      traefik.http.routers.loki.service: "loki"
+      traefik.http.routers.loki.middlewares: "authelia@docker,no-poweredby@docker,even-less-secure-headers@docker"
+      traefik.http.services.loki.loadbalancer.server.port: "3100"
+
+  promtail:
+    image: ${PROMTAIL_IMAGE:-grafana/promtail:latest}
+    container_name: promtail
+    hostname: promtail
+    volumes:
+      - ${DOCKERDIR:-/home/homelab}/monitoring/promtail/config.yaml:/etc/promtail/config.yaml:ro
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yaml
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+      - external
+    labels:
+      log_name: "promtail"
+      prometheus.scrape: "true"
+      prometheus.port: "9080"
+      prometheus.path: "/metrics"
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.promtail.tls: "true"
+      traefik.http.routers.promtail.entrypoints: "https"
+      traefik.http.routers.promtail.rule: "Host(`promtail.cityzen.co.za`)"
+      traefik.http.routers.promtail.service: "promtail"
+      traefik.http.routers.promtail.middlewares: "authelia@docker,no-poweredby@docker,even-less-secure-headers@docker"
+      traefik.http.services.promtail.loadbalancer.server.port: "9080"
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:latest}
+    container_name: grafana
+    hostname: grafana
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Africa/Johannesburg}
+    volumes:
+      - ${DOCKERDIR:-/home/homelab}/monitoring/grafana:/var/lib/grafana
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+      - external
+    labels:
+      log_name: "grafana"
+      prometheus.scrape: "true"
+      prometheus.port: "3000"
+      prometheus.path: "/metrics"
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.grafana.tls: "true"
+      traefik.http.routers.grafana.entrypoints: "https"
+      traefik.http.routers.grafana.rule: "Host(`grafana.cityzen.co.za`)"
+      traefik.http.routers.grafana.service: "grafana"
+      traefik.http.routers.grafana.middlewares: "authelia@docker,no-poweredby@docker,even-less-secure-headers@docker"
+      traefik.http.services.grafana.loadbalancer.server.port: "3000"
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:latest}
+    container_name: prometheus
+    hostname: prometheus
+    volumes:
+      - ${DOCKERDIR:-/home/homelab}/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+      - external
+    labels:
+      log_name: "prometheus"
+      prometheus.scrape: "true"
+      prometheus.port: "9090"
+      prometheus.path: "/metrics"
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.prometheus.tls: "true"
+      traefik.http.routers.prometheus.entrypoints: "https"
+      traefik.http.routers.prometheus.rule: "Host(`prometheus.cityzen.co.za`)"
+      traefik.http.routers.prometheus.service: "prometheus"
+      traefik.http.routers.prometheus.middlewares: "authelia@docker,no-poweredby@docker,even-less-secure-headers@docker"
+      traefik.http.services.prometheus.loadbalancer.server.port: "9090"
+
+volumes:
+  prometheus_data:
+
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

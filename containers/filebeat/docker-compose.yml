@@ -1,0 +1,43 @@
+# Filebeat (Log Forwarder)
+version: "3.8"
+services:
+  filebeat:
+    image: ${FILEBEAT_IMAGE:-elastic/filebeat:latest}
+    container_name: filebeat
+    hostname: filebeat
+    user: "${PUID}:${PGID}"
+    environment:
+      - TZ=${TZ:-Africa/Johannesburg}
+    volumes:
+      - ${DOCKERDIR:-/home/homelab}/monitoring/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - filebeat_etc:/usr/share/filebeat/etc
+      - filebeat_var:/usr/share/filebeat/var
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+    labels:
+      log_name: "filebeat"
+      prometheus.scrape: "true"
+      prometheus.port: "5066"
+      prometheus.path: "/metrics"
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.filebeat.tls: "true"
+      traefik.http.routers.filebeat.entrypoints: "https"
+      traefik.http.routers.filebeat.rule: "Host(`filebeat.cityzen.co.za`)"
+      traefik.http.routers.filebeat.service: "filebeat"
+      traefik.http.routers.filebeat.middlewares: "authelia@docker,no-poweredby@docker,even-less-secure-headers@docker"
+      traefik.http.services.filebeat.loadbalancer.server.port: "5066"
+volumes:
+  filebeat_etc:
+  filebeat_var:
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

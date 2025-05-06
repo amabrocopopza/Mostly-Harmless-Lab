@@ -1,0 +1,29 @@
+# Portainer (Container Management UI)
+version: "3.8"
+services:
+  portainer:
+    image: portainer/portainer-ee
+    container_name: portainer
+    restart: always
+    networks:
+      - homelab
+    ports:
+      - 9000:9000
+      - 8000:8000
+    environment:
+      - DOCKER_API_VERSION=1.48
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DOCKERDIR:-/home/homelab/conf}/portainer-ee:/data
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "homelab"
+      traefik.http.routers.dock.entrypoints: "https"
+      traefik.http.routers.dock.rule: "Host(\"dock.cityzen.co.za\")"
+      traefik.http.routers.dock.tls: "true"
+      traefik.http.routers.dock.middlewares: "authelia@docker,even-less-secure-headers@docker"
+      traefik.http.services.dock.loadbalancer.server.port: "9000"
+      log_name: "portainer"
+networks:
+  homelab:
+    external: true

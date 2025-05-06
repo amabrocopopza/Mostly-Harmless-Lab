@@ -1,0 +1,36 @@
+# Promtail (Log Shipper)
+version: "3.8"
+services:
+  promtail:
+    image: ${PROMTAIL_IMAGE:-grafana/promtail:latest}
+    container_name: promtail
+    hostname: promtail
+    volumes:
+      - ${DOCKERDIR:-/home/homelab}/monitoring/promtail/config.yaml:/etc/promtail/config.yaml:ro
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yaml
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+    labels:
+      log_name: "promtail"
+      prometheus.scrape: "true"
+      prometheus.port: "9080"
+      prometheus.path: "/metrics"
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.promtail.tls: "true"
+      traefik.http.routers.promtail.entrypoints: "https"
+      traefik.http.routers.promtail.rule: "Host(`promtail.cityzen.co.za`)"
+      traefik.http.routers.promtail.service: "promtail"
+      traefik.http.routers.promtail.middlewares: "authelia@docker,no-poweredby@docker,even-less-secure-headers@docker"
+      traefik.http.services.promtail.loadbalancer.server.port: "9080"
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

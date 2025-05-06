@@ -1,0 +1,30 @@
+# Cloudflare Dynamic DNS Updater (cityzen-ddns)
+# Maintainer: Homelab DevOps
+#
+# This docker-compose file runs a simple DDNS updater for Cloudflare.
+# It updates DNS records using the Cloudflare API for dynamic IP environments.
+
+version: "3.8"
+services:
+  cityzen-ddns:
+    image: oznu/cloudflare-ddns:latest  # DDNS image
+    container_name: cityzenddns         # Container name
+    hostname: cityzenddns               # Hostname inside container
+    environment:
+      - API_KEY=${CLOUDFLARE_DNS_API_TOKEN}  # Cloudflare API token for DNS updates
+      - ZONE=${DOMAINNAME0}                  # Cloudflare DNS zone (domain)
+      - PROXIED=true                         # Enable Cloudflare proxy for records
+      - PUID=${PUID:-1000}                   # User ID for file permissions
+      - PGID=${PGID:-1000}                   # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg}        # Timezone for logs
+    restart: unless-stopped                  # Restart unless manually stopped
+    stop_grace_period: 30s                   # Grace period for shutdown
+    security_opt:
+      - no-new-privileges:true               # Prevent privilege escalation
+    networks:
+      - internal                             # Only needs internal network
+
+networks:
+  internal:
+    driver: bridge
+    name: internal

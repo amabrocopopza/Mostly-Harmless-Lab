@@ -1,0 +1,71 @@
+
+services:
+  # =========================
+  # CodeServer (VS Code Web IDE)
+  # =========================
+  codeserver:
+    image: "${CODESERVER_IMAGE:-linuxserver/code-server:latest}"
+    container_name: codeserver
+    hostname: codeserver
+    environment:
+      # User and group settings
+      - PUID=${EPUID:-0}
+      - PGID=${EPGID:-0}
+      - UMASK_SET=002
+      # Timezone
+      - TZ=${TZ:-Africa/Johannesburg}
+      # CodeServer settings
+      - PROXY_DOMAIN=code.cityzen.co.za
+      - DEFAULT_WORKSPACE=${WORKSPACEMOUNT}
+      - PASSWORD=
+      - HASHED_PASSWORD=${CODESERVER_HASHED_PASSWORD}
+      - DOCKER_MODS=linuxserver/mods:code-server-awscli|linuxserver/mods:docker|linuxserver/mods:nodejs|linuxserver/mods:python3|linuxserver/mods:zsh
+    volumes:
+      # CodeServer configuration
+      - ${DOCKERDIR:-/home/homelab/conf}/code-server/conf:/config:ro
+      # Workspace and configuration mounts
+      - ${DOCKERDIR:-/home/homelab/conf}:/conf
+      - ${LOGS:-/var/log/code}:/logs
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+      - external
+    labels:
+      # Logging/Monitoring
+      log_name: "codeserver"
+      prometheus.scrape: "true"
+      prometheus.port: "8443"
+      prometheus.path: "/metrics"
+      # Traefik Enablement
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      # Traefik Routing/Rules
+      traefik.http.routers.codeserver.entrypoints: "https"
+      traefik.http.routers.codeserver.tls: "true"
+      traefik.http.routers.codeserver.rule: "Host(`code.cityzen.co.za`)"
+      traefik.http.routers.codeserver.service: "codeserver"
+      # Traefik Middleware
+      traefik.http.routers.codeserver.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"
+      # Traefik Service Port
+      traefik.http.services.codeserver.loadbalancer.server.port: "8443"
+
+
+
+
+
+
+
+# =============================
+# NETWORKS
+# =============================
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}    # Internal network for stack services
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}    # External network for Traefik and cross-stack access
+

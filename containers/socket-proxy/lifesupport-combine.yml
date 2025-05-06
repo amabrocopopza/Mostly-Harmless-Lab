@@ -1,0 +1,82 @@
+version: "3.8"
+services:
+  socket-proxy:
+    container_name: socket-proxy
+    image: tecnativa/docker-socket-proxy    # Lightweight secure proxy for Docker socket
+    restart: always
+    networks:
+      - internal
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    environment:
+      - LOG_LEVEL=alert
+      - EVENTS=1
+      - PING=1
+      - VERSION=1
+      - AUTH=0
+      - SECRETS=0
+      - POST=1
+      - DELETE=1
+      - BUILD=0
+      - COMMIT=0
+      - CONFIGS=0
+      - CONTAINERS=1
+      - DISTRIBUTION=0
+      - EXEC=0
+      - IMAGES=1
+      - INFO=1
+      - NETWORKS=1
+      - NODES=0
+      - PLUGINS=0
+      - SERVICES=1
+      - SESSION=0
+      - SWARM=0
+      - SYSTEM=0
+      - TASKS=1
+      - VOLUMES=1
+      - CONTAINERS_CREATE=1
+      - CONTAINERS_START=1
+      - CONTAINERS_UPDATE=1
+      - CONTAINERS_DELETE=1
+      - IMAGES_DELETE=1
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--timeout=2", "http://localhost:2375/_ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      log_name: "socket-proxy"
+      prometheus.scrape: "true"
+      prometheus.port: "2375"
+      prometheus.path: "/metrics"
+
+  portainer:
+    image: portainer/portainer-ee
+    container_name: portainer
+    restart: always
+    networks:
+      - external
+    ports:
+      - 9000:9000
+    environment:
+      - DOCKER_API_VERSION=1.48
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DOCKERDIR:-/home/homelab/conf}/portainer-ee:/data
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.dock.entrypoints: "https"
+      traefik.http.routers.dock.rule: "Host(`dock.cityzen.co.za`)"
+      traefik.http.routers.dock.tls: "true"
+      traefik.http.routers.dock.middlewares: "authelia@docker,even-less-secure-headers@docker"
+      traefik.http.services.dock.loadbalancer.server.port: "9000"
+      log_name: "portainer"
+
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

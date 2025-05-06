@@ -1,0 +1,35 @@
+# docker-compose.yml for Jellyseerr (from holo-deck stack)
+# Strictly follows FORMATTING.md and user rules.
+version: '3.8'
+services:
+  jellyseerr:
+    image: ${JELLYSEERR_IMAGE:-lscr.io/linuxserver/jellyseerr:latest}
+    container_name: jellyseerr
+    hostname: jellyseerr
+    environment:
+      - LOG_LEVEL=info                              # Logging level
+      - TZ=${TZ:-Africa/Johannesburg}               # Timezone
+    volumes:
+      - ${DOCKERDIR:-home/homelab/conf}/jellyseerr:/app/config  # Persistent Jellyseerr config
+    networks:
+      - external
+    restart: unless-stopped
+    # labels:
+      # 📹 Logging/Monitoring
+      # log_name: "jellyseerr"  # Main app label for logging (Promtail/Loki)
+      # prometheus.scrape: "true"  # Enable Prometheus scraping
+      # prometheus.port: "5055"    # Prometheus port
+      # prometheus.path: "/metrics"  # Prometheus metrics path
+      # 🚀 Traefik Enablement
+      # traefik.enable: "true"
+      # traefik.docker.network: "external"
+      # 🎯 Traefik Routing/Rules
+      # traefik.http.routers.jellyseerr.entrypoints: "https"
+      # traefik.http.routers.jellyseerr.tls: "true"
+      # traefik.http.routers.jellyseerr.rule: "Host(`flix.cityzen.co.za`)"
+      # traefik.http.routers.jellyseerr.service: "jellyseerr"
+      # traefik.http.routers.jellyseerr.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"
+networks:
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

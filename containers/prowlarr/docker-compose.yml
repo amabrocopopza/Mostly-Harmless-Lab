@@ -1,0 +1,45 @@
+# docker-compose.yml for Prowlarr (from holo-deck stack)
+# Strictly follows FORMATTING.md and user rules.
+version: '3.8'
+services:
+  prowlarr:
+    image: "${PROWLARR:-lscr.io/linuxserver/prowlarr:latest}"
+    hostname: prowlarr
+    container_name: prowlarr
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Africa/Johannesburg}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:prowlarr
+      - TP_THEME=plex
+    volumes:
+      - ${DOCKERDIR:-home/homelab/conf}/prowlarr:/config
+    networks:
+      - internal
+      - external
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    # labels:
+      # log_name: "prowlarr"
+      # prometheus.scrape: "true"
+      # prometheus.port: "9696"
+      # prometheus.path: "/metrics"
+      # traefik.enable: "true"
+      # traefik.docker.network: "external"
+      # traefik.http.routers.prowlarr.entrypoints: "https"
+      # traefik.http.routers.prowlarr.tls: "true"
+      # traefik.http.routers.prowlarr.rule: "Host(`indexer.cityzen.co.za`)"
+      # traefik.http.routers.prowlarr.service: "prowlarr"
+      # traefik.http.routers.prowlarr.middlewares: "authelia@docker,even-less-secure-headers@docker"
+      # traefik.http.services.prowlarr.loadbalancer.server.port: 9696
+    ports:
+      - "9696:9696" # Prowlarr UI
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

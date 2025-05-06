@@ -1,0 +1,42 @@
+# AdGuard Home (DNS/Ad-block)
+version: "3.8"
+services:
+  adguard:
+    image: ${ADGUARD_IMAGE:-adguard/adguardhome:latest}
+    container_name: imperial-core.adguard
+    hostname: adguard
+    ports:
+      - 53:53/tcp
+      - 53:53/udp
+    networks:
+      - external
+      - internal
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/adguard-home/work:/opt/adguardhome/work
+      - ${DOCKERDIR:-/home/homelab/conf}/adguard-home/conf:/opt/adguardhome/conf
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Africa/Johannesburg}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      log_name: "adguard"
+      prometheus.scrape: "true"
+      prometheus.port: "80"
+      prometheus.path: "/metrics"
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.adguard.tls: "true"
+      traefik.http.routers.adguard.entrypoints: "https"
+      traefik.http.routers.adguard.rule: "Host(`adman.cityzen.co.za`)"
+      traefik.http.routers.adguard.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

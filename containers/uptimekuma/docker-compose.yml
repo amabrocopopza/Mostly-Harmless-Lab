@@ -1,0 +1,39 @@
+# Uptime Kuma (Status Monitoring)
+version: "3.8"
+services:
+  uptimekuma:
+    image: ${UPTIMEKUMA_IMAGE:-louislam/uptime-kuma:1}
+    container_name: uptimekuma
+    hostname: uptimekuma
+    user: "${UPTIMEKUMA_PUID:-1000}:${UPTIMEKUMA_PGID:-1000}"
+    environment:
+      - TZ=${UPTIMEKUMA_TZ:-Africa/Johannesburg}
+    volumes:
+      - ${DOCKERDIR:-/home/homelab}/monitoring/uptimekuma:/app/data
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+      - external
+    labels:
+      log_name: "uptimekuma"
+      prometheus.scrape: "true"
+      prometheus.port: "3001"
+      prometheus.path: "/metrics"
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.uptimekuma.tls: "true"
+      traefik.http.routers.uptimekuma.entrypoints: "https"
+      traefik.http.routers.uptimekuma.rule: "Host(`statusdeck.cityzen.co.za`)"
+      traefik.http.routers.uptimekuma.service: "uptimekuma"
+      traefik.http.routers.uptimekuma.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"
+      traefik.http.services.uptimekuma.loadbalancer.server.port: "3001"
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

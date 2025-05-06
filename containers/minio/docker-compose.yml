@@ -1,0 +1,50 @@
+# docker-compose.yml for MinIO (cargo-hold stack)
+# See FORMATTING.md for formatting standards
+version: '3.8'
+services:
+  minio:
+    image: "${MINIO_IMAGE:-minio/minio:latest}"
+    container_name: minio
+    hostname: minio
+    command: server --console-address ":9001" /data
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_CONFIG_DIR=/config
+      - MINIO_LOG_LEVEL=debug
+      - MINIO_BROWSER_REDIRECT_URL=${MINIO_BROWSER_REDIRECT_URL}
+    volumes:
+      - ${DOCKERDATA}/data/minio/:/data
+      - ${DOCKERDIR}/minio/config:/config
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - external
+      - internal
+    restart: unless-stopped
+    labels:
+      log_name: "minio"
+      prometheus.scrape: "true"
+      prometheus.port: "9000"
+      prometheus.path: "/minio/prometheus/metrics"
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.minio-console.entrypoints: "https"
+      traefik.http.routers.minio-console.rule: "Host(`bucket.cityzen.co.za`)"
+      traefik.http.routers.minio-console.service: "minio-console"
+      traefik.http.routers.minio-console.middlewares: "authelia@docker,even-less-secure-headers@docker"
+      traefik.http.services.minio-console.loadbalancer.server.port: 9001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

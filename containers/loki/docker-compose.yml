@@ -1,0 +1,36 @@
+# Loki (Log Aggregator)
+version: "3.8"
+services:
+  loki:
+    image: ${LOKI_IMAGE:-grafana/loki:latest}
+    container_name: loki
+    hostname: loki
+    volumes:
+      - ${DOCKERDIR:-/home/homelab}/monitoring/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+    labels:
+      log_name: "loki"
+      prometheus.scrape: "true"
+      prometheus.port: "3100"
+      prometheus.path: "/metrics"
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.loki.tls: "true"
+      traefik.http.routers.loki.entrypoints: "https"
+      traefik.http.routers.loki.rule: "Host(`loki.cityzen.co.za`)"
+      traefik.http.routers.loki.service: "loki"
+      traefik.http.routers.loki.middlewares: "authelia@docker,no-poweredby@docker,even-less-secure-headers@docker"
+      traefik.http.services.loki.loadbalancer.server.port: "3100"
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

@@ -1,0 +1,40 @@
+services:
+  waha:
+    image: devlikeapro/waha-plus
+    restart: always
+    volumes:
+      - '${DOCKERDIR:-/home/homelab/conf}/whatsapp:/app/.sessions'
+      - '${MEDIALIBRARY:-/mnt/pool/library}/media/whatsapp:/app/.media'
+    environment:
+      WHATSAPP_API_HOSTNAME: whatsapp.cityzen.co.za
+      WAHA_BASE_URL: https://whatsapp.cityzen.co.za:443
+      WAHA_DEBUG_MODE: "false"
+      TZ: ${TZ:-Africa/Johannesburg}
+      UMASK_SET: 002
+      WAHA_LOG_FORMAT: JSON
+      WAHA_LOG_LEVEL: info
+      WAHA_HTTP_LOG_LEVEL: info
+      WAHA_AUTO_START_DELAY_SECONDS: 5
+      WAHA_PRINT_QR: "false"
+      WAHA_WORKER_ID: whatsapple
+      WHATSAPP_RESTART_ALL_SESSIONS: "true"
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
+      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY}
+      WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD}
+      WHATSAPP_SWAGGER_USERNAME: ${WHATSAPP_SWAGGER_USERNAME}
+      WHATSAPP_SWAGGER_PASSWORD: ${WHATSAPP_SWAGGER_PASSWORD}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.waha.rule=Host(`whatsapp.cityzen.co.za`)"
+      - "traefik.http.routers.waha.entrypoints=https"
+      - "traefik.http.routers.waha.tls=true"
+      - "traefik.http.services.waha.loadbalancer.server.port=3000"
+      - "traefik.http.routers.waha.middlewares=authelia@docker" # Uncomment and adjust if you use middleware
+    networks:
+      - external
+
+networks:
+  external:
+    external: true
+

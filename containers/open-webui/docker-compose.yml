@@ -1,0 +1,36 @@
+# docker-compose.yml for Open WebUI (from drone-bay stack)
+# Strictly follows FORMATTING.md and user rules.
+version: '3.8'
+services:
+  open-webui:
+    image: "${OPEN_WEBUI_DOCKER_IMAGE:-ghcr.io/open-webui/open-webui:ollama}"
+    container_name: drone-bay.open-webui
+    hostname: open-webui
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/llm/ollama-data:/root/.ollama
+      - ${DOCKERDIR:-/home/homelab/conf}/llm/open-webui-data:/app/backend/data
+      - ${DOCKERDIR:-/home/homelab/conf}/comfyui/output:/output
+    environment:
+      - OLLAMA_API_BASE_URL=${OLLAMA_API_BASE_URL:-http://localhost:11434}
+      - GLOBAL_LOG_LEVEL=${GLOBAL_LOG_LEVEL:-INFO}
+      - DISABLE_AUTH=${DISABLE_AUTH:-false}
+      - PRELOAD_MODELS=${PRELOAD_MODELS:-mistral:latest}
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - ENABLE_RAG_WEB_SEARCH=${ENABLE_RAG_WEB_SEARCH}
+      - RAG_WEB_SEARCH_ENGINE=${RAG_WEB_SEARCH_ENGINE}
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY}
+    ports:
+      - "8080:8080" # Open WebUI UI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+networks:
+  default:
+    external: false

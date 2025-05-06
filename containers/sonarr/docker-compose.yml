@@ -1,0 +1,46 @@
+# docker-compose.yml for Sonarr (from holo-deck stack)
+# Strictly follows FORMATTING.md and user rules.
+version: '3.8'
+services:
+  sonarr:
+    image: ${SONARR_IMAGE:-lscr.io/linuxserver/sonarr:latest}
+    container_name: sonarr
+    hostname: sonarr
+    environment:
+      - PUID=${PUID:-1000}                   # User ID for file permissions
+      - PGID=${PGID:-1000}                   # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg}        # Timezone
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:sonarr # ThemePark mod
+      - TP_THEME=plex                        # ThemePark theme
+    volumes:
+      - ${DOCKERDIR:-home/homelab/conf}/sonarr:/config              # Persistent Sonarr config
+      - ${MEDIALIBRARY:-/mnt/pool/library}/tv:/tv                   # TV folder
+      - ${MEDIALIBRARY:-/mnt/pool/library}/downloads/complete:/downloads  # Completed downloads
+    networks:
+      - internal
+      - external
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "8989:8989" # Sonarr UI
+    # labels:
+      # 📹 Logging/Monitoring
+      # log_name: "sonarr"  # Main app label for logging (Promtail/Loki)
+      # 🚀 Traefik Enablement
+      # traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      # traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      # traefik.http.routers.sonarr.tls: "true"  # Enable TLS
+      # traefik.http.routers.sonarr.entrypoints: "https"  # HTTPS entrypoint
+      # traefik.http.routers.sonarr.rule: "Host(`sonarr.cityzen.co.za`)"  # Domain routing rule
+      # 🛡️ Middleware
+      # traefik.http.routers.sonarr.middlewares: "authelia@docker,less-secure-headers@docker,no-poweredby@docker"  # Auth, relaxed headers, hide X-Powered-By
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

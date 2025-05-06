@@ -1,0 +1,47 @@
+version: "3.8"
+services:
+  authelia:
+    image: authelia/authelia:${AUTHELIA_VERSION:-latest}
+    container_name: authelia
+    hostname: authelia
+    user: "${PUID}:${PGID}"
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Africa/Johannesburg}
+      - DUO_HOSTNAME=${DUO_HOSTNAME}
+      - DUO_INTEGRATION_KEY=${DUO_INTEGRATION_KEY}
+      - DUO_SECRET_KEY=${DUO_SECRET_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - STORAGE_ENCRYPTION_KEY=${STORAGE_ENCRYPTION_KEY}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf/authelia}/authelia:/config
+      - /var/log/:/logs
+    networks:
+      - external
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=conf/seccomp/authelia-seccomp.json
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9091/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      log_name: "authelia"
+      traefik.enable: "true"
+      traefik.http.routers.auth.rule: "Host(`auth.cityzen.co.za`)"
+      traefik.http.routers.auth.entrypoints: "https"
+      traefik.http.routers.auth.tls: "true"
+      traefik.http.routers.auth.middlewares: "secure-headers@docker,no-poweredby@docker"
+      prometheus.scrape: "true"
+      prometheus.port: "9959"
+      prometheus.path: "/metrics"
+networks:
+  external:
+    external: true
+    name: external

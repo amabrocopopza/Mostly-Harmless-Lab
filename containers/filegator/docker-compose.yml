@@ -1,0 +1,34 @@
+# docker-compose.yml for FileGator (from cargo-hold stack)
+# Strictly follows FORMATTING.md and user rules.
+version: '3.8'
+services:
+  filegator:
+    image: ${FILEGATOR_IMAGE:-filegator/filegator:latest}
+    container_name: filegator
+    hostname: filegator
+    volumes:
+      - ${FILEGATOR_SHARED_FOLDER}:/var/www/filegator/repository:ro   # Shared folder mount (read-only for serving files only)
+      - ${DOCKERDIR:-home/homelab/conf}/filegator/private:/var/www/filegator/private  # Private config
+    networks:
+      - external
+    restart: unless-stopped
+    # labels:
+      # 📹 Logging/Monitoring
+      # log_name: "filegator"
+      # prometheus.scrape: "true"
+      # prometheus.port: "8080"
+      # prometheus.path: "/metrics"
+      # 🚀 Traefik Enablement
+      # traefik.enable: "true"
+      # traefik.docker.network: "external"
+      # 🎯 Traefik Routing/Rules
+      # traefik.http.routers.filegator.entrypoints: "https"
+      # traefik.http.routers.filegator.tls: "true"
+      # traefik.http.routers.filegator.rule: "Host(`files.cityzen.co.za`)"
+      # traefik.http.routers.filegator.service: "filegator"
+      # traefik.http.routers.filegator.middlewares: "authelia@docker"
+      # traefik.http.services.filegator.loadbalancer.server.port: "80"
+networks:
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

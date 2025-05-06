@@ -20,7 +20,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
-containers
+
 # Ignore backup files
 *~
 *.bak

@@ -1,0 +1,50 @@
+# Wazuh Suite (Indexer + Dashboard)
+# Requires external PostgreSQL database connectivity.
+version: "3.8"
+services:
+  wazuh-indexer:
+    image: ${WAZUH_INDEXER_IMAGE:-wazuh/wazuh-indexer:latest}
+    container_name: wazuh-indexer
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Africa/Johannesburg}
+      - WAZUH_PASSWORD=${WAZUH_PASSWORD}
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+    # Add external database connection as needed
+
+  wazuh-dashboard:
+    image: ${WAZUH_DASHBOARD_IMAGE:-wazuh/wazuh-dashboard:latest}
+    container_name: wazuh-dashboard
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Africa/Johannesburg}
+      - WAZUH_DASHBOARD_PASSWORD=${WAZUH_DASHBOARD_PASSWORD}
+      # Add DB connection vars as needed
+    volumes:
+      - wazuh-dashboard-config:/usr/share/wazuh-dashboard/config
+      - wazuh-dashboard-custom:/usr/share/wazuh-dashboard/custom
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+
+volumes:
+  wazuh-indexer-data:
+  wazuh-dashboard-config:
+  wazuh-dashboard-custom:
+
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
