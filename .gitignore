@@ -1,0 +1,26 @@
+# Homelab Git Ignore
+# Ignore WindSurf and formatting rules
+.windsurfrules
+FORMATTING.md
+
+# Ignore environment files and secrets
+.env
+*.env
+*.env.*
+
+# Ignore Docker and Compose artifacts
+*.log
+acme.json
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore editor/project files
+.vscode/
+.idea/
+*.swp
+/containers
+# Ignore backup files
+*~
+*.bak

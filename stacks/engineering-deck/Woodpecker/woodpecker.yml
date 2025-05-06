@@ -1,0 +1,76 @@
+  # =========================
+  # Woodpecker CI Server
+  # =========================
+services:
+  woodpecker-server:
+    image: "${WOODPECKER_SERVER_IMAGE:-woodpeckerci/woodpecker-server:v3}"
+    container_name: woodpecker-server
+    hostname: woodpecker-server
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/woodpecker/server-data:/var/lib/woodpecker/
+    environment:
+      - WOODPECKER_OPEN=true
+      - WOODPECKER_HOST=${WOODPECKER_HOST:-https://www.ci.cityzen.co.za}
+      - WOODPECKER_GITHUB=true
+      - WOODPECKER_GITHUB_CLIENT=${WOODPECKER_GITHUB_CLIENT}
+      - WOODPECKER_GITHUB_SECRET=${WOODPECKER_GITHUB_SECRET}
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+      - UMASK_SET=002
+    restart: ${RESTART:-unless-stopped}
+    networks:
+      - internal
+      - external
+    labels:
+      log_name: "woodpecker-server"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"
+      prometheus.port: "8000"
+      prometheus.path: "/metrics"
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+
+      traefik.http.routers.woodpecker-server.entrypoints: "https"
+      traefik.http.routers.woodpecker-server.tls: "true"
+      traefik.http.routers.woodpecker-server.rule: "Host(`ci.cityzen.co.za`)"
+      traefik.http.routers.woodpecker-server.service: "woodpecker-server"
+      traefik.http.services.woodpecker-server.loadbalancer.server.port: "8000"
+      traefik.http.routers.woodpecker-server.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"
+
+  # =========================
+  # Woodpecker CI Agent
+  # =========================
+  woodpecker-agent:
+    image: "${WOODPECKER_AGENT_IMAGE:-woodpeckerci/woodpecker-agent:v3}"
+    container_name: woodpecker-agent
+    hostname: woodpecker-agent
+    command: agent
+    restart: always
+    depends_on:
+      - woodpecker-server
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/woodpecker/agent-config:/etc/woodpecker
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WOODPECKER_SERVER=woodpecker-server:9000
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+    networks:
+      - internal
+      - external
+    labels:
+      log_name: "woodpecker-agent"
+
+
+
+
+
+
+# =============================
+# NETWORKS
+# =============================
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}    # Internal network for stack services
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}    # External network for Traefik and cross-stack access
+

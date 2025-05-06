@@ -1,0 +1,154 @@
+# =============================
+# ENGINEERING DECK STACK
+# =============================
+# Developer tools and API testing for the Homelab.
+# Each service is documented for clarity and maintainability.
+services:
+  # =========================
+  # CodeServer (VS Code Web IDE)
+  # =========================
+  codeserver:
+    image: "${CODESERVER_IMAGE:-linuxserver/code-server:latest}"
+    container_name: codeserver
+    hostname: codeserver
+    environment:
+      # User and group settings
+      - PUID=${EPUID:-0}
+      - PGID=${EPGID:-0}
+      - UMASK_SET=002
+      # Timezone
+      - TZ=${TZ:-Africa/Johannesburg}
+      # CodeServer settings
+      - PROXY_DOMAIN=code.cityzen.co.za
+      - DEFAULT_WORKSPACE=${WORKSPACEMOUNT}
+      - PASSWORD=
+      - HASHED_PASSWORD=${CODESERVER_HASHED_PASSWORD}
+      - DOCKER_MODS=linuxserver/mods:code-server-awscli|linuxserver/mods:docker|linuxserver/mods:nodejs|linuxserver/mods:python3|linuxserver/mods:zsh
+    volumes:
+      # CodeServer configuration
+      - ${DOCKERDIR:-/home/homelab/conf}/code-server/conf:/config:ro
+      # Workspace and configuration mounts
+      - ${DOCKERDIR:-/home/homelab/conf}:/conf
+      - ${LOGS:-/var/log/code}:/logs
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+      - external
+    labels:
+      # Logging/Monitoring
+      log_name: "codeserver"
+      prometheus.scrape: "true"
+      prometheus.port: "8443"
+      prometheus.path: "/metrics"
+      # Traefik Enablement
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      # Traefik Routing/Rules
+      traefik.http.routers.codeserver.entrypoints: "https"
+      traefik.http.routers.codeserver.tls: "true"
+      traefik.http.routers.codeserver.rule: "Host(`code.cityzen.co.za`)"
+      traefik.http.routers.codeserver.service: "codeserver"
+      # Traefik Middleware
+      traefik.http.routers.codeserver.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"
+      # Traefik Service Port
+      traefik.http.services.codeserver.loadbalancer.server.port: "8443"
+
+  hoppscotch:
+    container_name: hoppscotch
+    hostname: hoppscotch
+    image: "${HOPPSCOTCH_IMAGE:-hoppscotch/hoppscotch:latest}"
+    networks:
+      - external
+    environment:
+      # Database settings
+      - DATABASE_URL=${HOPPSCOTCH_DATABASE_URL}
+      # Security settings
+      - JWT_SECRET=${HOPPSCOTCH_JWT_SECRET}
+      - TOKEN_SALT_COMPLEXITY=10
+      - MAGIC_LINK_TOKEN_VALIDITY=3
+      - REFRESH_TOKEN_VALIDITY=604800000
+      - ACCESS_TOKEN_VALIDITY=86400000
+      - SESSION_SECRET=${HOPPSCOTCH_SESSION_SECRET}
+      # Application settings
+      - REDIRECT_URL=https://app.apilab.cityzen.co.za
+      - WHITELISTED_ORIGINS=https://api.apilab.cityzen.co.za,https://app.apilab.cityzen.co.za,https://admin.apilab.cityzen.co.za
+      - VITE_ALLOWED_AUTH_PROVIDERS=EMAIL
+      - MAILER_SMTP_URL=${HOPPSCOTCH_MAILER_SMTP_URL}
+      - MAILER_ADDRESS_FROM=${HOPPSCOTCH_MAILER_ADDRESS_FROM}
+      - RATE_LIMIT_TTL=60
+      - RATE_LIMIT_MAX=100
+      - VITE_BASE_URL=https://apilab.cityzen.co.za
+      - VITE_SHORTCODE_BASE_URL=https://apilab.cityzen.co.za
+      - VITE_ADMIN_URL=https://apilab.cityzen.co.za/admin/admin
+      - VITE_BACKEND_GQL_URL=https://apilab.cityzen.co.za/backend/graphql
+      - VITE_BACKEND_WS_URL=wss://apilab.cityzen.co.za/backend/graphql
+      - VITE_BACKEND_API_URL=https://apilab.cityzen.co.za/backend/v1
+      - VITE_APP_TOS_LINK=https://docs.hoppscotch.io/support/terms
+      - VITE_APP_PRIVACY_POLICY_LINK=https://docs.hoppscotch.io/support/privacy
+      - DATA_ENCRYPTION_KEY=${HOPPSCOTCH_DATA_ENCRYPTION_KEY}
+    labels:
+      # Traefik Enablement
+      - "traefik.enable=true"
+      # Frontend rules
+      - "traefik.http.routers.hoppscotch-frontend.rule=Host(`apilab.cityzen.co.za`)"
+      - "traefik.http.routers.hoppscotch-frontend.entrypoints=https"
+      - "traefik.http.services.hoppscotch-frontend.loadbalancer.server.port=3000"
+      - "traefik.http.routers.hoppscotch-frontend.service=hoppscotch-frontend"
+      - "traefik.http.routers.hoppscotch-frontend.tls=true"
+      # Admin rules
+      - "traefik.http.routers.hoppscotch-sh-admin.rule=Host(`admin.apilab.cityzen.co.za`)"
+      - "traefik.http.routers.hoppscotch-sh-admin.entrypoints=https"
+      - "traefik.http.services.hoppscotch-sh-admin.loadbalancer.server.port=3100"
+      - "traefik.http.routers.hoppscotch-sh-admin.service=hoppscotch-sh-admin"
+      - "traefik.http.routers.hoppscotch-sh-admin.tls=true"
+      # Backend rules
+      - "traefik.http.routers.hoppscotch-backend.rule=Host(`apilab.cityzen.co.za`) && PathPrefix(`/backend`)"
+      - "traefik.http.routers.hoppscotch-backend.entrypoints=https"
+      - "traefik.http.services.hoppscotch-backend.loadbalancer.server.port=3170"
+      - "traefik.http.routers.hoppscotch-backend.service=hoppscotch-backend"
+      - "traefik.http.routers.hoppscotch-backend.tls=true"
+      # Backend middleware
+      - "traefik.http.middlewares.backend-strip.stripprefix.prefixes=/backend"
+      - "traefik.http.routers.hoppscotch-backend.middlewares=backend-strip"
+
+  proxyscotch:
+    image: ${PROXYSCOTCH_IMAGE:-hoppscotch/proxyscotch:v0.1.4}
+    container_name: proxyscotch
+    hostname: proxyscotch
+    environment:
+      # Proxyscotch settings
+      - PROXYSCOTCH_ALLOWED_ORIGINS=*
+      # Allow all origins; set to your domain for stricter CORS, e.g. https://yourdomain.com
+      - PROXYSCOTCH_BANNED_OUTPUTS=
+      # No banned outputs by default; add sensitive values to redact if needed
+      - PROXYSCOTCH_BANNED_DESTS=
+      # No banned destinations by default; add hostnames to block if needed
+    networks:
+      - external
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.proxyscotch.rule=Host(`proxyscotch.cityzen.co.za`)"
+      - "traefik.http.routers.proxyscotch.entrypoints=https"
+      - "traefik.http.routers.proxyscotch.tls=true"
+      - "traefik.http.services.proxyscotch.loadbalancer.server.port=9159"
+      - "traefik.http.routers.proxyscotch.middlewares=authelia@docker"
+
+
+
+
+
+
+# =============================
+# NETWORKS
+# =============================
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}    # Internal network for stack services
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}    # External network for Traefik and cross-stack access
+

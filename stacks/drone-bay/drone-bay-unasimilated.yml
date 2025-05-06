@@ -1,0 +1,93 @@
+services:
+  # =========================
+  # Ollama (LLM Inference Engine)
+  # =========================
+  ollama:
+    image: "${OLLAMA_IMAGE:-ollama/ollama:latest}"
+    container_name: drone-bay.ollama
+    hostname: ollama
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /home/homelab/conf/ai/data/ollama:/root/.ollama
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: ${OLLAMA_GPU_DRIVER:-nvidia}
+              count: ${OLLAMA_GPU_COUNT:-1}
+              capabilities:
+                - gpu
+
+  # =========================
+  # Open WebUI (AI Web Interface)
+  # =========================
+  open-webui:
+    image: "${OPEN_WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:main}"
+    container_name: drone-bay.open-webui
+    hostname: open-webui
+    depends_on:
+      - ollama
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_API_BASE_URL=${OLLAMA_API_BASE_URL:-http://ollama:11434}
+      - GLOBAL_LOG_LEVEL=${GLOBAL_LOG_LEVEL:-INFO}
+      - DISABLE_AUTH=${DISABLE_AUTH:-false}
+      - PRELOAD_MODELS=${PRELOAD_MODELS:-mistral:latest}
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - ENABLE_RAG_WEB_SEARCH=${ENABLE_RAG_WEB_SEARCH}
+      - RAG_WEB_SEARCH_ENGINE=${RAG_WEB_SEARCH_ENGINE}
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY}
+      - RAG_WEB_SEARCH_RESULT_COUNT=${RAG_WEB_SEARCH_RESULT_COUNT}
+      - RAG_WEB_SEARCH_CONCURRENT_REQUESTS=${RAG_WEB_SEARCH_CONCURRENT_REQUESTS}
+      - AUTOMATIC1111_BASE_URL=${AUTOMATIC1111_BASE_URL}
+      - ENABLE_IMAGE_GENERATION=${ENABLE_IMAGE_GENERATION}
+    networks:
+      - external
+      - internal
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "open-webui"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping
+      prometheus.port: "8080"    # Port for Prometheus metrics
+      prometheus.path: "/metrics"  # Metrics path
+
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.open-webui.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.open-webui.tls: "true"  # Enable TLS for this route
+      traefik.http.routers.open-webui.rule: "Host(`brains.cityzen.co.za`)"  # Domain routing rule
+      traefik.http.routers.open-webui.service: "open-webui"  # Traefik service name
+
+      # 🛡️ Middleware
+      traefik.http.routers.open-webui.middlewares: "authelia@docker"  # Require authentication via Authelia middleware
+
+      # 🔌 Service Port
+      traefik.http.services.open-webui.loadbalancer.server.port: 8080  # Internal port for load balancing
+
+
+      
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

@@ -1,0 +1,408 @@
+# =============================
+# HOLO DECK MEDIA STACK
+# =============================
+# Unified media management: indexers, downloaders, library, requests.
+# Each service is documented for clarity and maintainability.
+services:
+  # -------------------------
+  # Plex (Media Server)
+  # -------------------------
+  plex:
+    image: ${PLEX_IMAGE:-lscr.io/linuxserver/plex:latest}
+    container_name: plex
+    hostname: plex
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all            # Expose all NVIDIA GPUs
+      - NVIDIA_DRIVER_CAPABILITIES=all        # Enable all NVIDIA driver capabilities
+      - PUID=${PUID:-1000}                    # User ID for file permissions
+      - PGID=${PGID:-1000}                    # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg}         # Timezone
+      - PLEX_TRANSCODE_DIR=/transcode         # Transcode temp dir
+      ## - PLEX_CLAIM=${PLEX_CLAIM}           # Plex claim token (uncomment for first run)
+      - ADVERTISE_IP=https://${PLEX_SERVER_IP_ADVERTISE} #:32400/ # Advertise IP for clients
+      - VERSION=docker                       # Image version
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:plex # ThemePark mod
+    runtime: nvidia
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/plex:/config             # Persistent Plex config
+      - ${MEDIALIBRARY:-/mnt/pool/library}:/library    
+      - /dev/shm:/dev/shm                                       
+    network_mode: host
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "plex"  # Main app label for logging (Promtail/Loki)
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.plex.tls: "true"  # Enable TLS
+      traefik.http.routers.plex.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.plex.rule: "Host(`plex.cityzen.co.za`)"  # Domain routing rule
+      # 🛡️ Middleware
+      traefik.http.routers.plex.middlewares: "authelia@docker,less-secure-headers@docker,no-poweredby@docker"  # Auth, relaxed headers, hide X-Powered-By
+
+
+  # -------------------------
+  # Sonarr (TV Shows Manager)
+  # -------------------------
+  sonarr:
+    image: ${SONARR_IMAGE:-lscr.io/linuxserver/sonarr:latest}
+    container_name: sonarr
+    hostname: sonarr
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Africa/Johannesburg}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:sonarr
+      - TP_THEME=plex
+      - UMASK_SET=002      
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/sonarr:/config              # Persistent Sonarr config
+      - ${MEDIALIBRARY:-/mnt/pool/library}:/data
+    networks:
+      - internal
+      - external
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "sonarr"  # Main app label for logging (Promtail/Loki)
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.sonarr.tls: "true"  # Enable TLS
+      traefik.http.routers.sonarr.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.sonarr.rule: "Host(`sonarr.cityzen.co.za`)"  # Domain routing rule
+      # 🛡️ Middleware
+      traefik.http.routers.sonarr.middlewares: "authelia@docker,less-secure-headers@docker,no-poweredby@docker"  # Auth, relaxed headers, hide X-Powered-By
+
+
+  # -------------------------
+  # Radarr (Movies Manager)
+  # -------------------------
+  radarr:
+    image: ${RADARR_IMAGE:-lscr.io/linuxserver/radarr:latest}
+    hostname: radarr
+    container_name: radarr
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Africa/Johannesburg}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:sonarr
+      - TP_THEME=plex
+      - UMASK_SET=002      
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/radarr:/config              # Persistent Radarr config
+      - ${MEDIALIBRARY:-/mnt/pool/library}/:/data
+    networks:
+      - internal
+      - external
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "radarr"  # Main app label for logging (Promtail/Loki)
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.radarr.tls: "true"  # Enable TLS
+      traefik.http.routers.radarr.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.radarr.rule: "Host(`radarr.cityzen.co.za`)"  # Domain routing rule
+      # 🛡️ Middleware
+      traefik.http.routers.radarr.middlewares: "authelia@docker,less-secure-headers@docker,no-poweredby@docker"  # Auth, relaxed headers, hide X-Powered-By
+
+
+  # -------------------------
+  # Prowlarr (Indexer Manager)
+  # -------------------------
+  prowlarr:
+    image: ${PROWLARR:-lscr.io/linuxserver/prowlarr:latest}
+    hostname: prowlarr
+    container_name: prowlarr
+    environment:
+      - PUID=${PUID:-1000}                   # User ID for file permissions
+      - PGID=${PGID:-1000}                   # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg}        # Timezone
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:prowlarr # ThemePark mod
+      - TP_THEME=plex                        # ThemePark theme
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/prowlarr:/config  # Persistent Prowlarr config
+    networks:
+      - internal
+      - external
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "prowlarr"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping (if supported)
+      prometheus.port: "9696"    # Prometheus port (Prowlarr default)
+      prometheus.path: "/metrics"  # Prometheus metrics path (if enabled)
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.prowlarr.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.prowlarr.tls: "true"  # Enable TLS
+      traefik.http.routers.prowlarr.rule: "Host(`indexer.cityzen.co.za`)"  # Domain routing rule
+      traefik.http.routers.prowlarr.service: "prowlarr"  # Traefik service name
+      traefik.http.routers.prowlarr.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"  # Auth, relaxed headers, hide X-Powered-By
+      # 🔌 Service Port
+      traefik.http.services.prowlarr.loadbalancer.server.port: "9696"  # Internal port for load balancing
+
+
+  # -------------------------------------------------
+  # flaresolverr (solve Cloudflare protections)
+  # -------------------------------------------------
+  flaresolverr:
+    image: ${FLARE_SOLVER_IMAGE:-ghcr.io/flaresolverr/flaresolverr:latest}
+    container_name: flaresolverr
+    hostname: flaresolverr
+    restart: always
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_HTML=${LOG_HTML:-false}
+      - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
+      - TZ=${TZ:-Africa/Johannesburg} 
+      - DRIVER=${DRIVER:-nodriver}
+    networks:
+      - internal
+      
+
+  # -------------------------
+  # Transmission (Torrent Downloader)
+  # -------------------------
+  transmission:
+    image: ${TRANSMISSION_IMAGE:-lscr.io/linuxserver/transmission:latest}
+    container_name: transmission
+    hostname: transmission
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Africa/Johannesburg}
+      - ADVERTISE_IP=https://${TORRENT_SERVER_IP_ADVERTISE}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:transmission
+      - TP_THEME=aquamarine
+      - DOCKER_MODS=linuxserver/mods:transmission-floodui
+      - UMASK_SET=002     
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/transmission:/config
+      - ${MEDIALIBRARY:-/mnt/pool/library}:/data
+    ports:
+      - 51413:51413
+      - 51413:51413/udp
+    networks:
+      - internal
+      - external
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      # 📹 Logging/Monitorin  g
+      log_name: "transmission"
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.transmission-root.rule: "Host(`farmer.cityzen.co.za`) && PathPrefix(`/`)"
+      traefik.http.routers.transmission-root.entrypoints: "https"
+      traefik.http.routers.transmission-root.tls: "true"
+      traefik.http.routers.transmission-root.service: "noop@internal"
+      traefik.http.routers.transmission-root.middlewares: "redirect-to-transmission,authelia@docker,even-less-secure-headers@docker"
+      traefik.http.middlewares.redirect-to-transmission.redirectregex.regex: "^https?://(?:[^/]+)/(?:$|\\?)"
+      traefik.http.middlewares.redirect-to-transmission.redirectregex.replacement: "https://farmer.cityzen.co.za/transmission/web/"
+      traefik.http.middlewares.redirect-to-transmission.redirectregex.permanent: "true"
+      # 🚪 Main transmission route
+      traefik.http.routers.transmission.rule: "Host(`farmer.cityzen.co.za`) && PathPrefix(`/transmission`)"
+      traefik.http.routers.transmission.entrypoints: "https"
+      traefik.http.routers.transmission.tls: "true"
+      traefik.http.services.transmission.loadbalancer.server.port: "9095"
+      traefik.http.routers.transmission.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"
+
+  # -------------------------
+  # Unpackerr (Unpack torrents)
+  # -------------------------
+  unpackerr:
+    image: ${UNPACKERR_IMAGE:-golift/unpackerr}
+    container_name: unpackerr
+    hostname: unpackerr
+    user: 1000:1000  # Set this to your actual PUID/PGID for permissions (matches your other containers)
+    restart: ${RESTART:-unless-stopped} 
+    depends_on:
+      - sonarr
+      - radarr
+    networks:
+      - external    
+    volumes:
+      - ${MEDIALIBRARY:-/mnt/pool/library}:/data  # Optional: persistent config
+    environment:
+      - TZ=Africa/Johannesburg
+      - UN_LOG_FILE=/library/unpackerr.log
+      - UN_SONARR_0_URL=http://sonarr:8989
+      - UN_SONARR_0_API_KEY=${SONARR_API_KEY}
+      - UN_RADARR_0_URL=http://radarr:7878
+      - UN_RADARR_0_API_KEY=${RADARR_API_KEY}   
+
+
+  # -------------------------
+  # Jellyseerr (Media Requests)
+  # -------------------------
+  jellyseerr:
+    image: ${JELLYSEERR_IMAGE:-fallenbagel/jellyseerr:latest}  # [REQUIRED] Official Jellyseerr image
+    container_name: jellyseerr                                 # [REQUIRED] Container name
+    hostname: jellyseerr                                      # [REQUIRED] Hostname
+    environment:
+      - LOG_LEVEL=info                                        # [OPTIONAL] Logging level (debug/info/warn/error)
+      - TZ=${TZ:-Africa/Johannesburg}                         # [REQUIRED] Timezone for the container
+    networks:
+      - external
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/jellyseerr:/app/config  # [REQUIRED] Persistent Jellyseerr config
+    restart: ${RESTART:-unless-stopped}                                   # [REQUIRED] Restart policy
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "jellyseerr"                                  # [REQUIRED] Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"                               # [OPTIONAL] Enable Prometheus scraping (if supported)
+      prometheus.port: "5055"                                 # [OPTIONAL] Prometheus port (Jellyseerr default)
+      prometheus.path: "/metrics"                             # [OPTIONAL] Prometheus metrics path (if enabled)
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"                                  # [REQUIRED] Enable Traefik reverse proxy
+      traefik.docker.network: "external"                      # [REQUIRED] Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.jellyseerr.entrypoints: "https"    # [REQUIRED] HTTPS entrypoint
+      traefik.http.routers.jellyseerr.tls: "true"             # [REQUIRED] Enable TLS
+      traefik.http.routers.jellyseerr.rule: "Host(`flix.cityzen.co.za`)" # [REQUIRED] Domain routing rule
+      traefik.http.routers.jellyseerr.service: "jellyseerr"   # [REQUIRED] Traefik service name
+      traefik.http.routers.jellyseerr.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"  # [OPTIONAL] Middleware chain
+      # 🔌 Service Port
+      traefik.http.services.jellyseerr.loadbalancer.server.port: "5055"  # [REQUIRED] Internal port for load balancing
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "http://127.0.0.1:5055/api/v1/status",
+          "-qO",
+          "/dev/null",
+        ]
+      interval: 30s
+      retries: 10
+
+
+  # -------------------------
+  # Tautulli (Plex Stats & Monitoring)
+  # -------------------------
+  tautulli:
+    image: ${TAUTULLI_IMAGE:-lscr.io/linuxserver/tautulli:latest}
+    container_name: tautulli
+    hostname: tautulli
+    environment:
+      - PUID=${PUID:-1000}                   # User ID for file permissions
+      - PGID=${PGID:-1000}                   # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg}        # Timezone
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:tautulli # ThemePark mod
+      - TP_THEME=plex                        # ThemePark theme
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/tautulli:/config  # Persistent Tautulli config
+      
+    networks:
+      - internal
+      - external
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "tautulli"                                         # Logging tag
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"                                       # Enable Traefik reverse proxy
+      traefik.docker.network: "external"                           # Traefik network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.tautulli.tls: "true"                    # Enable TLS
+      traefik.http.routers.tautulli.entrypoints: "https"           # HTTPS entrypoint
+      traefik.http.routers.tautulli.rule: "Host(`plexstats.cityzen.co.za`)" # Domain routing rule
+      traefik.http.routers.tautulli.middlewares: "authelia@docker,no-poweredby@docker" # Security middleware   
+
+
+  # -------------------------
+  # tdarr (media aggregator)
+  # -------------------------
+  tdarr:
+    container_name: tdarr
+    hostname: tdarr
+    image: ${TDARR_DOCKER_IMAGE:-ghcr.io/haveagitgat/tdarr:latest}
+    restart: ${RESTART:-unless-stopped}
+    networks:
+      - external
+      - internal
+    environment:
+      - TZ=${TZ:-Africa/Johannesburg}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - UMASK_SET=002
+      - webUIPort=8265
+      - internalNode=true
+      - inContainer=true
+      - ffmpegVersion=7
+      - nodeName=Priest
+      - NVIDIA_VISIBLE_DEVICES=all            # Expose all NVIDIA GPUs
+      - NVIDIA_DRIVER_CAPABILITIES=all        # Enable all NVIDIA driver capabilities
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/tdarr/server:/app/server
+      - ${DOCKERDIR:-/home/homelab/conf}/tdarr/configs:/app/configs
+      - ${MEDIALIBRARY:-/mnt/pool/library}/tdarr/logs:/app/logs
+      - ${MEDIALIBRARY:-/mnt/pool/library}:/media
+      - ${MEDIALIBRARY:-/mnt/pool/library}/tdarr/transcode_cache:/temp
+    runtime: nvidia      
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+
+    labels:
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.tdarr.entrypoints: "https"
+      traefik.http.routers.tdarr.tls: "true"
+      traefik.http.routers.tdarr.rule: "Host(`tdarr.cityzen.co.za`)"
+      traefik.http.services.tdarr.loadbalancer.server.port: "8265"
+      traefik.http.routers.tdarr.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"  
+
+
+# =============================
+# NETWORKS
+# =============================
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}    # Internal Docker network
+
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}    # External Docker network

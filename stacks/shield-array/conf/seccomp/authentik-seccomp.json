@@ -1,0 +1,37 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "architectures": [
+    "SCMP_ARCH_X86_64",
+    "SCMP_ARCH_AARCH64"
+  ],
+  "syscalls": [
+
+    {"names": ["accept", "accept4", "access", "arch_prctl", "bind"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["brk", "clock_gettime", "clone", "close", "connect"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["dup", "dup2", "epoll_create1", "epoll_ctl", "epoll_pwait"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["epoll_wait", "execve", "exit", "exit_group", "fchmod"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["fchown", "fcntl", "fstat", "fsync", "futex"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["getdents64", "getegid", "geteuid", "getgid", "getpeername"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["getpid", "getppid", "getrandom", "getsockname", "getsockopt"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["gettid", "getuid", "ioctl", "listen", "lseek"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["mkdir", "mmap", "mprotect", "munmap", "nanosleep"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["newfstatat", "open", "openat", "pipe2", "poll"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["pread64", "pwrite64", "read", "recvfrom", "recvmsg"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["rt_sigaction", "rt_sigprocmask", "rt_sigreturn", "sendmsg", "sendto"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["setsockopt", "shutdown", "socket", "stat", "tgkill"], "action": "SCMP_ACT_ALLOW"},
+    {"names": ["time", "uname", "write", "writev"], "action": "SCMP_ACT_ALLOW"},
+
+    // Authentik-specific additions
+    {"names": ["eventfd2", "timerfd_create"], "action": "SCMP_ACT_ALLOW"}, 
+    {"names": ["prctl", "prlimit64"], "action": "SCMP_ACT_ALLOW"}, 
+    {"names": ["memfd_create"], "action": "SCMP_ACT_ALLOW"}, 
+    {"names": ["getrusage"], "action": "SCMP_ACT_ALLOW"}, 
+    {"names": ["sched_yield"], "action": "SCMP_ACT_ALLOW"}, 
+    
+    // Database/Redis operations
+    {"names": ["shmget", "shmat", "shmdt"], "action": "SCMP_ACT_ALLOW"},
+    
+    // LDAP integration
+    {"names": ["getxattr", "listxattr"], "action": "SCMP_ACT_ALLOW"}
+  ]
+}

@@ -1,0 +1,236 @@
+services:
+  #################################
+  ## 🔐 Pangalactic Load Balancer
+  #################################
+
+  traefik:
+    # Traefik reverse proxy for routing, SSL, and security
+    container_name: traefik
+    image: traefik:${TRAEFIK_VERSION:-latest}  # Traefik version (default: latest)
+    restart: always  # Always restart unless manually stopped
+    networks:
+      - internal   # Internal Docker network for service communication
+      - external   # External Docker network for public access
+    security_opt:
+      - no-new-privileges:true   # Prevent privilege escalation
+      - seccomp=conf/seccomp/traefik-seccomp.json  # Custom seccomp profile for hardening
+    ports:
+      - target: 80    # HTTP port
+        published: 80
+        protocol: tcp
+        mode: host
+      - target: 443   # HTTPS port
+        published: 443
+        protocol: tcp
+        mode: host
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf/traefik}/traefik/rules:/rules # Dynamic configuration directory (file provider)
+      - ${DOCKERDIR:-/home/homelab/conf/traefik}/traefik/acme.json:/acme.json # ACME cert storage (chmod 600 required)
+      - /var/log/traefik:/logs # Traefik logs (for monitoring/fail2ban)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Allow containers to reach the host
+    environment:
+      - CLOUDFLARE_DNS_API_TOKEN=${CLOUDFLARE_DNS_API_TOKEN}  # Cloudflare API token for DNS challenge
+      - DOCKER_API_VERSION=1.48  # Docker API version for provider
+    command:
+      # 🌍 General
+      - --global.checkNewVersion=true
+      - --log.level=DEBUG
+      - --log.filePath=/logs/traefik.log
+      - --accessLog=true
+      - --accessLog.filePath=/logs/access.log     
+      - --accessLog.bufferingSize=100
+      - --serversTransport.insecureSkipVerify=true
+      # 📡 EntryPoints
+      - --entryPoints.http.address=:80
+      - --entryPoints.https.address=:443
+      # 🔁 HTTP → HTTPS Redirect
+      - --entrypoints.http.http.redirections.entryPoint.to=https
+      - --entrypoints.http.http.redirections.entryPoint.scheme=https
+      # 🔐 TLS
+      - --entrypoints.https.http.tls.options=default
+      - --entrypoints.https.http.tls.certresolver=cloudflare
+      - --entrypoints.https.http.tls.domains[0].main=cityzen.co.za
+      - --entrypoints.https.http.tls.domains[0].sans=*.cityzen.co.za
+      # 🧠 Forwarded Headers / Proxy IPs
+      - --entrypoints.https.forwardedHeaders.trustedIPs=${TRUSTED_IP_RANGES}
+      - --entryPoints.https.proxyProtocol.trustedIPs=${TRUSTED_IP_RANGES}
+      # 📊 API Dashboard
+      - --api=true
+      - --api.insecure=false
+      - --api.dashboard=true
+      - --metrics.prometheus=true
+      # 📦 Providers
+      - --providers.docker=true
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.network=homelab
+      - --providers.docker.exposedByDefault=false
+      - --providers.file.directory=/rules
+      - --providers.file.watch=true
+      # 🔐 Cert Resolver (Cloudflare)
+      - --certificatesResolvers.cloudflare.acme.storage=/acme.json
+      - --certificatesResolvers.cloudflare.acme.dnsChallenge.provider=cloudflare
+      - --certificatesResolvers.cloudflare.acme.dnsChallenge.resolvers=1.1.1.1:53,1.0.0.1:53
+      - --certificatesResolvers.cloudflare.acme.dnsChallenge.delayBeforeCheck=90
+      # 🔐 Coriwdsec bouncer
+      - --experimental.plugins.crowdsec-bouncer-traefik-plugin.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
+      - --experimental.plugins.crowdsec-bouncer-traefik-plugin.version=v1.4.2      
+    labels:
+      log_name: "traefik"
+      traefik.enable: "true"    
+      #################################
+      ## 🔐 Router: Traefik Dashboard
+      #################################
+      traefik.http.routers.traefik.rule: "Host(`${DASH_URL}.${DOMAINNAME0}`)"
+      traefik.http.routers.traefik.entrypoints: https
+      traefik.http.routers.traefik.tls: "true"
+      traefik.http.routers.traefik.service: api@internal
+      traefik.http.routers.traefik.middlewares: authelia@docker    
+      #################################
+      ## 🔐 Middleware: Auth (Authelia)
+      #################################
+      traefik.http.middlewares.authelia.forwardauth.address: "http://authelia:9091/api/verify?rd=https://auth.cityzen.co.za/"
+      traefik.http.middlewares.authelia.forwardauth.trustForwardHeader: "true"
+      traefik.http.middlewares.authelia.forwardauth.authResponseHeaders: Remote-User, Remote-Groups, Remote-Name, Remote-Email    
+      #################################
+      ## 🛡 Middleware: CrowdSec Plugin
+      #################################
+      traefik.http.middlewares.crowdsec.plugin.crowdsec-bouncer-traefik-plugin.CrowdsecLapiKey: "${CROWDSEC_LAPI_KEY}"
+      traefik.http.middlewares.crowdsec.plugin.crowdsec-bouncer-traefik-plugin.Enabled: "true" 
+      #################################
+      ## 🛡 TLS Options
+      #################################
+      traefik.tls.options.TLS.minVersion: "VersionTLS12"
+      traefik.tls.options.TLS.sniStrict: "true"
+      traefik.tls.options.TLS.curvePreferences: "CurveP256,CurveP384,CurveP521"
+      traefik.tls.options.TLS.cipherSuites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305"        
+      #################################
+      ## 🧱 Middleware: Secure Headers
+      #################################
+      traefik.http.middlewares.secure-headers.headers.stspreload: "true"
+      traefik.http.middlewares.secure-headers.headers.stsincludesubdomains: "true"
+      traefik.http.middlewares.secure-headers.headers.stsseconds: 63072000
+      traefik.http.middlewares.secure-headers.headers.forcestsheader: "true"
+      traefik.http.middlewares.secure-headers.headers.contenttypenosniff: "true"
+      traefik.http.middlewares.secure-headers.headers.accesscontrolmaxage: 100
+      traefik.http.middlewares.secure-headers.headers.addvaryheader: "true"
+      traefik.http.middlewares.secure-headers.headers.browserXssFilter: "true"
+      traefik.http.middlewares.secure-headers.headers.hostsproxyheaders: X-Forwarded-Host
+      traefik.http.middlewares.secure-headers.headers.referrerPolicy: same-origin
+      traefik.http.middlewares.secure-headers.headers.contentsecuritypolicy: >-
+        default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+        img-src 'self' data:; font-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none';
+      traefik.http.middlewares.secure-headers.headers.customresponseheaders.X-Robots-Tag: none,noarchive,nosnippet,notranslate,noimageindex
+      traefik.http.middlewares.secure-headers.headers.permissionsPolicy: geolocation=(self), microphone=(), camera=()
+      traefik.http.middlewares.secure-headers.headers.customresponseheaders.Cross-Origin-Embedder-Policy: require-corp
+      traefik.http.middlewares.secure-headers.headers.customresponseheaders.Cross-Origin-Opener-Policy: same-origin
+      traefik.http.middlewares.secure-headers.headers.customresponseheaders.Cross-Origin-Resource-Policy: same-origin
+      traefik.http.middlewares.secure-headers.headers.customresponseheaders.X-Frame-Options: SAMEORIGIN    
+      #################################
+      ## 🧱 Middleware: Less Secure Headers
+      #################################
+      traefik.http.middlewares.less-secure-headers.headers.contentSecurityPolicy: >-
+        default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';
+        img-src 'self' data:; font-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'    
+      #################################
+      ## 🧱 Middleware: Even Less Secure Headers
+      #################################
+      traefik.http.middlewares.even-less-secure-headers.headers.contentSecurityPolicy: >-
+        default-src 'self' data: blob: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https:;
+        style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:;
+        connect-src *; worker-src 'self' blob:; frame-src *; media-src *; frame-ancestors *; object-src *; base-uri *        
+      #################################
+      ## 🔍 Middleware: No Powered-By
+      #################################
+      traefik.http.middlewares.no-poweredby.headers.customResponseHeaders.X-Powered-By: ""    
+      #################################
+      ## 🔬 Other Middlewares
+      #################################
+      traefik.http.middlewares.autodetect.contenttype.autodetect: "true"
+      traefik.http.middlewares.ip-whitelist.ipwhitelist.sourcerange: "192.168.101.0/24"    
+      #################################
+      ## 📊 Prometheus
+      #################################
+      prometheus.scrape: "true"
+      prometheus.port: "8080"
+      prometheus.path: "/metrics"
+
+    #################################
+    ## 🔐 The Babel Protocol
+    ################################
+
+  authelia:
+    # Authelia: Self-hosted authentication and authorization server
+    image: authelia/authelia:${AUTHELIA_VERSION:-latest}  # Authelia image and version
+    container_name: authelia                              # Container name
+    hostname: authelia                                   # Hostname inside container
+    user: "${PUID}:${PGID}"                              # Run as specific user/group for security
+    environment:
+      - PUID=${PUID:-1000}                  # User ID for file permissions
+      - PGID=${PGID:-1000}                  # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg}       # Timezone for logs and config
+      - DUO_HOSTNAME=${DUO_HOSTNAME}        # Duo Security integration (optional)
+      - DUO_INTEGRATION_KEY=${DUO_INTEGRATION_KEY}  # Duo integration key (optional)
+      - DUO_SECRET_KEY=${DUO_SECRET_KEY}    # Duo secret (optional)
+      - JWT_SECRET=${JWT_SECRET}            # JWT secret for session tokens
+      - SESSION_SECRET=${SESSION_SECRET}    # Session cookie encryption
+      - STORAGE_ENCRYPTION_KEY=${STORAGE_ENCRYPTION_KEY}  # Encrypts storage backend
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}  # API key for email notifications (optional)
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf/authelia}/authelia:/config  # Main config and persistent storage
+      - /var/log/:/logs                                             # Log output
+    networks:
+      - external                                    # Needs to be accessible by Traefik and users
+    restart: ${RESTART:-unless-stopped}                         # Restart unless manually stopped
+    stop_grace_period: 30s                          # Graceful shutdown period
+    security_opt:
+      - no-new-privileges:true                      # Prevent privilege escalation
+      - seccomp=conf/seccomp/authelia-seccomp.json               # Custom seccomp profile for hardening
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9091/api/health"]  # Health endpoint
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      log_name: "authelia"                                   # Container log label
+      traefik.enable: "true"                                 # Enable Traefik reverse proxy
+      traefik.http.routers.auth.rule: "Host(`auth.cityzen.co.za`)"  # Traefik route for SSO
+      traefik.http.routers.auth.entrypoints: "https"          # HTTPS only
+      traefik.http.routers.auth.tls: "true"                  # Enable TLS
+      traefik.http.routers.auth.middlewares: "secure-headers@docker,no-poweredby@docker"  # Security middlewares
+      prometheus.scrape: "true"                              # Enable Prometheus metrics
+      prometheus.port: "9959"                                # Prometheus metrics port
+      prometheus.path: "/metrics"                            # Prometheus metrics path
+
+
+      
+  cityzen-ddns:
+    # Cloudflare Dynamic DNS updater
+    image: oznu/cloudflare-ddns:latest  # DDNS image
+    container_name: cityzenddns         # Container name
+    hostname: cityzenddns               # Hostname inside container
+    environment:
+      - API_KEY=${CLOUDFLARE_DNS_API_TOKEN}  # Cloudflare API token for DNS updates
+      - ZONE=${DOMAINNAME0}                  # Cloudflare DNS zone (domain)
+      - PROXIED=true                         # Enable Cloudflare proxy for records
+      - PUID=${PUID:-1000}                   # User ID for file permissions
+      - PGID=${PGID:-1000}                   # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg}        # Timezone for logs
+    restart: ${RESTART:-unless-stopped}                  # Restart unless manually stopped
+    stop_grace_period: 30s                   # Grace period for shutdown
+    security_opt:
+      - no-new-privileges:true               # Prevent privilege escalation
+    networks:
+      - internal                             # Only needs internal network
+
+
+networks:
+  internal:
+    driver: bridge
+    name: internal
+
+
+
+  external:
+    external: true
+    name: external

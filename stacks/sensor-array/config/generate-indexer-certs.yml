@@ -1,0 +1,10 @@
+
+services:
+  generator:
+    image: wazuh/wazuh-certs-generator:0.0.2
+    hostname: wazuh-certs-generator
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/wazuh/config/wazuh_indexer_ssl_certs/:/certificates/
+      - ${DOCKERDIR:-/home/homelab/conf}/wazuh/config/certs.yml:/config/certs.yml
+    environment: {}
+      # - HTTP_PROXY=YOUR_PROXY_ADDRESS_OR_DNS  # Uncomment and set if you use a proxy

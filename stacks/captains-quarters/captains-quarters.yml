@@ -1,0 +1,186 @@
+services:
+  # =========================
+  # Home Assistant (Core Home Automation)
+  # =========================
+  homeassistant:
+    # Home Assistant requires host networking for device discovery and integrations with IoT devices.
+    container_name: homeassistant
+    hostname: homeassistant
+    image: "${HOMEASSISTANT_IMAGE:-ghcr.io/home-assistant/home-assistant:stable}:latest"
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/home-assistant:/config
+      - ${MEDIALIBRARY:-/mnt/pool/library}:/library:ro
+      - ${CAMERALIBRARY}:/camera:ro
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    network_mode: host  # Required for mDNS/UPnP
+    environment:
+      - PUID=${PUID:-1000}           # User ID for file permissions
+      - PGID=${PGID:-1000}           # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg} # Timezone
+    labels:
+      # 📋 Logging/Monitoring
+      log_name: "homeassistant"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping (if supported)
+      prometheus.port: "8123"    # Prometheus port (Home Assistant default)
+      prometheus.path: "/api/prometheus"  # Prometheus metrics path (if enabled)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8123"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # =========================
+  # ESPHome (IoT Device Firmware)
+  # =========================
+  esphome:
+    container_name: esphome
+    hostname: esphome
+    image: "${ESPHOME_IMAGE:-esphome/esphome}:latest"
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/esphome/config:/config
+      - /etc/localtime:/etc/localtime:ro
+    privileged: true  # Required for USB/serial access
+    network_mode: host  # Required for device discovery
+    restart: ${RESTART:-unless-stopped}
+    labels:
+      # 📋 Logging/Monitoring
+      log_name: "esphome"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping (if supported)
+      prometheus.port: "6052"    # Prometheus port (ESPHome default)
+      prometheus.path: "/metrics"  # Prometheus metrics path (if enabled)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6052"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # =========================
+  # Mosquitto (MQTT Broker)
+  # =========================
+  mosquitto:
+    image: "${MOSQUITTO_IMAGE:-eclipse-mosquitto}:latest"
+    container_name: mosquitto
+    hostname: mosquitto
+    environment:
+      - PUID=${PUID:-1000}           # User ID for file permissions
+      - PGID=${PGID:-1000}           # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg} # Timezone
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/mosquitto/config:/mosquitto/config
+      - ${DOCKERDIR:-/home/homelab/conf}/mosquitto/data:/mosquitto/data
+      - ${DOCKERDIR:-/home/homelab/conf}/mosquitto/log:/mosquitto/log
+    networks:
+      - internal
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      # 📋 Metrics/Logging
+      log_name: "mosquitto"
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "test", "-m", "test"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # =========================
+  # InfluxDB (Time Series Database)
+  # =========================
+  influxdb:
+    image: "${INFLUXDB_IMAGE:-influxdb:2.7-alpine}"
+    container_name: influxdb
+    hostname: influxdb
+    environment:
+      - PUID=${PUID:-1000}           # User ID for file permissions
+      - PGID=${PGID:-1000}           # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg} # Timezone
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/influxdb/data:/var/lib/influxdb2
+      - ${DOCKERDIR:-/home/homelab/conf}/influxdb/config:/etc/influxdb2
+    networks:
+      - internal
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+  # =========================
+  # Frigate (NVR & AI Camera)
+  # =========================
+  frigate:
+    container_name: frigate
+    image: "${FRIGATE_IMAGE:-ghcr.io/blakeblackshear/frigate:stable-tensorrt}:latest"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all                        # Expose all NVIDIA GPUs to the container
+      - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility  # Required NVIDIA driver features for Frigate
+      - FRIGATE_RTSP_PASSWORD=${FRIGATE_RTSP_PASSWORD}    # RTSP stream password (keep secure)
+      - YOLO_MODELS=yolov7-320                            # YOLO model(s) to use for detection
+      - USE_FP16=true                                     # Enable FP16 (half-precision) for inference
+      - TRT_MODEL_PREP_DEVICE=0                           # Device ID for TensorRT model preparation
+      - PUID=${PUID:-1000}                                # User ID for file permissions
+      - PGID=${PGID:-1000}                                # Group ID for file permissions
+      - TZ=${TZ:-Africa/Johannesburg}                     # Timezone for the container
+    shm_size: "128mb"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${DOCKERDIR:-/home/homelab/conf}/frigate/config:/config/
+      - ${CAMERALIBRARY}:/frigate
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    privileged: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "frigate"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping (if supported)
+      prometheus.port: "1935"    # Prometheus port (Frigate default)
+      prometheus.path: "/metrics"  # Prometheus metrics path (if enabled)
+
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.frigate.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.frigate.tls: "true"  # Enable TLS for this route
+      traefik.http.routers.frigate.rule: "Host(`frigate.cityzen.co.za`)"  # Domain routing rule
+      traefik.http.routers.frigate.service: "frigate"  # Traefik service name
+
+      # 🛡️ Middleware
+      traefik.http.routers.frigate.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"  # Auth, relaxed headers, hide X-Powered-By
+
+      # 🔌 Service Port
+      traefik.http.services.frigate.loadbalancer.server.port: 1935  # Internal port for load balancing
+
+
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

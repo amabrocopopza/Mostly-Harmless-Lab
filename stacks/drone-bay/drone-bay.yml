@@ -1,0 +1,283 @@
+# =============================
+# DRONE BAY STACK
+# =============================
+# This stack provides a web UI for LLMs (Ollama) and AI integrations.
+# All services are configured for best-practice volume and label management.
+
+services:
+  # -------------------------
+  # Open WebUI (Ollama LLM Web Interface)
+  # -------------------------
+  open-webui:
+    image: "${OPEN_WEBUI_DOCKER_IMAGE:-ghcr.io/open-webui/open-webui:ollama}"
+    container_name: open-webui
+    hostname: open-webui
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    runtime: nvidia
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/llm/ollama-data:/root/.ollama           # [REQUIRED] Ollama LLM model data
+      - ${DOCKERDIR:-/home/homelab/conf}/llm/open-webui-data:/app/backend/data   # [REQUIRED] Open WebUI persistent data
+      - ${DOCKERDIR:-/home/homelab/conf}/comfyui/output:/output                  # [REQUIRED] Shared folder for image/video output
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-all}
+      # === Standard Service Environment ===
+      - OLLAMA_API_BASE_URL=${OLLAMA_API_BASE_URL:-http://localhost:11434}        # [REQUIRED] Base URL for Ollama LLM API
+      - GLOBAL_LOG_LEVEL=${GLOBAL_LOG_LEVEL:-INFO}                                # [OPTIONAL] Logging level (DEBUG, INFO, WARN, ERROR)
+      - DISABLE_AUTH=${DISABLE_AUTH:-false}                                       # [OPTIONAL] Disable authentication for WebUI (not recommended for prod)
+      - PRELOAD_MODELS=${PRELOAD_MODELS:-mistral:latest}                          # [OPTIONAL] Models to preload at startup (comma-separated)
+      # === WebUI Secrets & API Keys ===
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}                                      # [REQUIRED/SECRET] Secret key for WebUI sessions/auth (change for prod!)
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY}                              # [OPTIONAL/SECRET] API key for Brave Search (if using brave)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}                                          # [OPTIONAL/SECRET] OpenAI API key (for GPT integration)
+      # === RAG & Web Search ===
+      - ENABLE_RAG_WEB_SEARCH=${ENABLE_RAG_WEB_SEARCH:-false}                     # [OPTIONAL] Enable RAG (retrieval-augmented generation) web search
+      - RAG_WEB_SEARCH_ENGINE=${RAG_WEB_SEARCH_ENGINE:-brave}                     # [OPTIONAL] Search engine for RAG (e.g., brave, google)
+      - RAG_WEB_SEARCH_RESULT_COUNT=${RAG_WEB_SEARCH_RESULT_COUNT:-5}             # [OPTIONAL] Number of results to fetch for RAG
+      - RAG_WEB_SEARCH_CONCURRENT_REQUESTS=${RAG_WEB_SEARCH_CONCURRENT_REQUESTS:-2} # [OPTIONAL] Max concurrent web search requests for RAG
+      # === Image Generation & HuggingFace ===
+      - AUTOMATIC1111_BASE_URL=${AUTOMATIC1111_BASE_URL:-http://localhost:7860}   # [OPTIONAL] URL for Stable Diffusion WebUI (image gen)
+      - ENABLE_IMAGE_GENERATION=${ENABLE_IMAGE_GENERATION:-false}                 # [OPTIONAL] Enable image generation features
+      - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-false}                                   # [OPTIONAL] Run HuggingFace Hub in offline mode
+      # === Ollama Advanced Settings ===
+      - OLLAMA_MODELS_PATH=${OLLAMA_MODELS_PATH:-/root/.ollama/models}            # [OPTIONAL] Custom path for Ollama models
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-true}                             # [OPTIONAL] Keep Ollama API alive
+      - OLLAMA_DEBUG=${OLLAMA_DEBUG:-false}                                       # [OPTIONAL] Enable Ollama debug mode
+      - OLLAMA_MAX_IDLE_TIME=${OLLAMA_MAX_IDLE_TIME:-600}                         # [OPTIONAL] Ollama max idle time (seconds)
+      - OLLAMA_MAX_WORKERS=${OLLAMA_MAX_WORKERS:-2}                               # [OPTIONAL] Ollama max worker threads
+      - OLLAMA_MAX_TOKENS=${OLLAMA_MAX_TOKENS:-4096}                             # [OPTIONAL] Ollama max tokens per request
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-120}                                     # [OPTIONAL] Ollama API timeout (seconds)
+      - OLLAMA_NUMA_NODE=${OLLAMA_NUMA_NODE:-0}                                   # [OPTIONAL] NUMA node for Ollama (performance tuning)
+      - OLLAMA_CUSTOM_PARAMETER=${OLLAMA_CUSTOM_PARAMETER:-}                      # [OPTIONAL] Custom Ollama parameter (advanced)
+      # === Internal Networking ===
+      - COMFYUI_BASE_URL=http://comfyui:8188                                      # [REQUIRED] Pointing to comfyui via internal network
+    networks:
+      - external
+      - internal
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "open-webui"
+      prometheus.scrape: "true"
+      prometheus.port: "8080"
+      prometheus.path: "/metrics"
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.open-webui.rule: "Host(`brains.cityzen.co.za`)"
+      traefik.http.routers.open-webui.entrypoints: "https"
+      traefik.http.routers.open-webui.tls: "true"
+      traefik.http.routers.open-webui.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"
+      traefik.http.services.open-webui.loadbalancer.server.port: 8080
+
+  # -------------------------
+  # ComfyUI (Image/Video Generation Engine)
+  # -------------------------
+  comfyui:
+    image: "${COMFYUI_DOCKER_IMAGE:-ghcr.io/amabrocopopza/comfyui:latest-cuda}"
+    container_name: comfyui
+    hostname: comfyui
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    runtime: nvidia
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/comfyui/models:/models            # [REQUIRED] Pretrained models
+      - ${DOCKERDIR:-/home/homelab/conf}/comfyui/extensions:/extensions    # [OPTIONAL] Custom nodes/extensions
+      - ${DOCKERDIR:-/home/homelab/conf}/comfyui/output:/output            # [REQUIRED] Output (images/videos)
+      - ${DOCKERDIR:-/home/homelab/conf}/comfyui/input:/input              # [OPTIONAL] Input data
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all            # Expose all NVIDIA GPUs
+      - NVIDIA_DRIVER_CAPABILITIES=all        # Enable all NVIDIA driver capabilities
+      - CLI_ARGS=---listen 0.0.0.0
+      - OPEN_WEBUI_BASE_URL=http://open-webui:8080
+      - PRELOAD_MODELS=Kandinsky:latest,FramePack:latest
+      - BRAVE_SEARCH_API_KEY
+      # - COMFYUI_API_TOKEN
+
+    deploy:
+      resources:
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+    networks:
+      - external
+      - internal
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "comfyui"
+      prometheus.scrape: "true"
+      prometheus.port: "8188"
+      prometheus.path: "/metrics"
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.comfyui.rule: "Host(`comfy.cityzen.co.za`)"
+      traefik.http.routers.comfyui.entrypoints: "https"
+      traefik.http.routers.comfyui.tls: "true"
+      traefik.http.routers.comfyui.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"
+      traefik.http.services.comfyui.loadbalancer.server.port: 8188
+
+
+  # -------------------------
+  # n8n (Workflow Automation)
+  # -------------------------
+  n8n:
+    image: "${N8N_DOCKER_IMAGE:-n8nio/n8n:latest}"
+    container_name: n8n
+    hostname: n8n
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    environment:
+      # === Standard Service Environment ===
+      - N8N_HOST=${N8N_HOST:-localhost}                                  # [REQUIRED] Hostname for n8n instance (e.g., localhost)
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}                         # [REQUIRED/SECRET] Encryption key for credentials/data (change for prod!)
+      - DB_POSTGRESDB_DATABASE=${N8N_DB_NAME:-n8n}                        # [REQUIRED] PostgreSQL database name for n8n
+      - DB_POSTGRESDB_USER=${N8N_DB_USER:-n8n}                            # [REQUIRED] PostgreSQL user for n8n
+      - DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD}                         # [REQUIRED/SECRET] PostgreSQL password for n8n (change for prod!)
+      - DB_TYPE=postgresdb                                                # [REQUIRED] Database type (always 'postgresdb')
+      - DB_POSTGRESDB_HOST=${N8N_DB_HOST:-spocknet}                             # [REQUIRED] PostgreSQL host for n8n
+      - DB_POSTGRESDB_PORT=${N8N_DB_PORT:-5432}                           # [REQUIRED] PostgreSQL port for n8n
+      - N8N_PORT=${N8N_PORT:-5678}                                        # [REQUIRED] Port for n8n web interface
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-https}                               # [REQUIRED] Protocol for n8n (http/https)
+      - N8N_RUNNERS_ENABLED=${N8N_RUNNERS_ENABLED:-true}                 # [OPTIONAL] Enable task runners for scaling workflows
+      - N8N_PROXY_HOPS=${N8N_PROXY_HOPS:-1}                               # [OPTIONAL] Number of proxy hops for reverse proxy setups
+      - NODE_ENV=${NODE_ENV:-production}                                  # [OPTIONAL] Node.js environment (development/production)
+      - N8N_SMTP_HOST=${N8N_SMTP_HOST}                                    # [OPTIONAL] SMTP server host for sending emails
+      - N8N_SMTP_PORT=${N8N_SMTP_PORT}                                    # [OPTIONAL] SMTP server port
+      - N8N_SMTP_USER=${N8N_SMTP_USER}                                    # [OPTIONAL] SMTP server username
+      - N8N_SMTP_PASS=${N8N_SMTP_PASS}                                    # [OPTIONAL/SECRET] SMTP server password
+      - N8N_SMTP_SENDER=${N8N_SMTP_SENDER} 
+      - N8N_SMTP_SSL=${N8N_SMTP_SSL:-false}
+      - N8N_SMTP_TLS=${N8N_SMTP_TLS:-true}
+      - NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=2048}           # [RECOMMENDED] Node.js memory limit (e.g., --max-old-space-size=2048)
+      # --- Advanced/Recommended/Optional variables (uncomment to use) ---
+      # - N8N_LOG_LEVEL=${N8N_LOG_LEVEL}                                    # [OPTIONAL] Log level (info, debug, warn, error)
+      # - N8N_METRICS=${N8N_METRICS}                                        # [OPTIONAL] Enable Prometheus metrics endpoint
+      # - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE}                    # [OPTIONAL] Enable HTTP basic auth for UI/API
+      # - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}                        # [OPTIONAL] Basic auth username
+      # - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}                # [OPTIONAL/SECRET] Basic auth password
+      # - N8N_PERSONALIZATION_ENABLED=${N8N_PERSONALIZATION_ENABLED}        # [OPTIONAL] Enable n8n telemetry/personalization
+      # - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=${N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN} # [OPTIONAL] Skip webhook deregistration on shutdown
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/data/n8n:/home/node/.n8n           # [REQUIRED] Persistent n8n data
+      - ${DOCKERDIR:-/home/homelab/conf}/n8n/conf:/files                    # [RECOMMENDED] n8n configuration files
+    networks:
+      - external
+      - internal
+    labels:
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.n8n.entrypoints: "https"     
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.n8n.rule: "Host(`hook.cityzen.co.za`)"
+      traefik.http.routers.n8n.middlewares: "authelia@docker"
+      traefik.http.routers.n8n.service: "n8n"
+      traefik.http.routers.n8n.tls: "true"
+
+      traefik.http.services.n8n.loadbalancer.server.port: 5678
+
+  piper:
+    image: ${PIPER_DOCKER_IMAGE:-lscr.io/linuxserver/piper:latest}
+    container_name: piper
+    hostname: piper    
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - PIPER_VOICE=en_US-lessac-medium
+      - PIPER_LENGTH=1.0 #optional
+      - PIPER_NOISE=0.667 #optional
+      - PIPER_NOISEW=0.333 #optional
+      - PIPER_SPEAKER=0 #optional
+      - PIPER_PROCS=1 #optional
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/piper/data:/config
+    ports:
+      - 10200:10200
+    restart: ${RESTART:-unless-stopped}
+
+    labels:
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"
+      traefik.docker.network: "external"
+      traefik.http.routers.piper.entrypoints: "https"     
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.piper.rule: "Host(`piper.cityzen.co.za`)"
+      traefik.http.routers.piper.middlewares: "authelia@docker"
+      traefik.http.routers.piper.service: "piper"
+      traefik.http.routers.piper.tls: "true"
+
+
+
+  whisper:
+    image: ${WHISPER_DOCKER_IMAGE:-lscr.io/linuxserver/faster-whisper:gpu}
+    container_name: whisper
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Africa/Johannesburg}
+      - WHISPER_MODEL=${WHISPER_MODEL:-tiny-int8}
+      - WHISPER_LANG=${WHISPER_LANGUAGE:-en}
+      - WHISPER_BEAM=${WHISPER_BEAM:-1}
+      - DOCKER_MODS=${DOCKER_MODS:-linuxserver/mods:universal-package-install}
+      - INSTALL_PIP_PACKAGES=${INSTALL_PIP_PACKAGES:-huggingface_hub[hf_xet]}
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/whisper:/config
+    ports:
+      - 10300:10300
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    networks:
+      - external
+      - internal
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    labels:
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"              # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.whisper.entrypoints: "https"                  # HTTPS entrypoint
+      traefik.http.routers.whisper.tls: "true"                           # Enable TLS
+      traefik.http.routers.whisper.rule: "Host(`whisper.cityzen.co.za`)"  # Domain routing rule
+      # 🛡️ Middleware
+      traefik.http.routers.whisper.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"  # Auth, relaxed headers, hide X-Powered-By
+      # 🔌 Service Port
+      traefik.http.services.whisper.loadbalancer.server.port: 10300  # Wyoming protocol port
+
+
+
+
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

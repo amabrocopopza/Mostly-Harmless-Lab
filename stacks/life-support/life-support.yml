@@ -1,0 +1,75 @@
+services:
+  socket-proxy:
+    container_name: socket-proxy
+    image: ${SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy}    # Lightweight secure proxy for Docker socket
+    restart: always 
+    networks:
+      - external 
+    volumes:
+      # Mount Docker socket read-only for security; only expose if absolutely needed
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    environment:
+      - LOG_LEVEL=alert  # Only log alerts to reduce noise
+      # --- API Permissions ---
+      # Enable/disable Docker API features for security hardening
+      # Granted by Default
+      - EVENTS=1         # Allow event stream (required for real-time updates)
+      - PING=1           # Allow ping (basic health check)
+      - VERSION=1        # Allow version info
+      # Revoked by Default
+      - AUTH=0           # Disallow authentication endpoint
+      - SECRETS=0        # Disallow Docker secrets (security)
+      - POST=1           # Allow POST requests (container actions)
+      - DELETE=1         # Allow DELETE requests (container/image removal)
+      # GET Options
+      - BUILD=0          # Disallow image builds (security)
+      - COMMIT=0         # Disallow commit (security)
+      - CONFIGS=0        # Disallow configs (security)
+      - CONTAINERS=1     # Allow container info
+      - DISTRIBUTION=0   # Disallow registry
+      - EXEC=0           # Disallow exec (security)
+      - IMAGES=1         # Allow image info
+      - INFO=1           # Allow system info
+      - NETWORKS=1       # Allow network info
+      - NODES=0          # Disallow swarm nodes
+      - PLUGINS=0        # Disallow plugins
+      - SERVICES=1       # Allow service info
+      - SESSION=0        # Disallow session
+      - SWARM=0          # Disallow swarm
+      - SYSTEM=0         # Disallow system
+      - TASKS=1          # Allow task info
+      - VOLUMES=1        # Allow volume info
+      # POST Options
+      - CONTAINERS_CREATE=1   # Allow container creation
+      - CONTAINERS_START=1    # Allow container start
+      - CONTAINERS_UPDATE=1   # Allow container update
+      # DELETE Options
+      - CONTAINERS_DELETE=1   # Allow container deletion
+      - IMAGES_DELETE=1       # Allow image deletion
+      # Optional: Fine-grained container controls (uncomment if needed)
+      # - ALLOW_START=1        # Allow explicit container start
+      # - ALLOW_STOP=1         # Allow explicit container stop
+      # - ALLOW_RESTARTS=1     # Allow explicit container restart/kill
+      # Optional: Use a different socket path
+      # - SOCKET_PATH=/var/run/balena-engine.sock  # Use non-default Docker socket location
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--timeout=2", "http://localhost:2375/_ping"] # Check Docker API health
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "socket-proxy"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping (if supported)
+      prometheus.port: "2375"    # Prometheus port (Docker Socket Proxy default)
+      prometheus.path: "/metrics"  # Prometheus metrics path (if enabled)
+
+# --- Networks ---
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}  # Shared internal Docker network
+
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}  # External Docker network for cross-stack communication

@@ -1,0 +1,133 @@
+# =========================
+# MAINTENANCE BAY STACK
+# =========================
+# This stack provides DNS, backup, and Docker maintenance services.
+# All services are configured for best-practice volume and label management.
+services:
+  # -------------------------
+  # AdGuard Home (DNS/Ad-block)
+  # -------------------------
+  adguard:
+    image: ${ADGUARD_IMAGE:-adguard/adguardhome:latest}
+    container_name: adguard
+    hostname: adguard
+    ports:
+      - 53:53/tcp
+      - 53:53/udp
+    networks:
+      - external
+      - internal
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/adguard-home/work:/opt/adguardhome/work  # AdGuard runtime data
+      - ${DOCKERDIR:-/home/homelab/conf}/adguard-home/conf:/opt/adguardhome/conf  # AdGuard configuration (read-only)
+    environment:
+      - PUID=${PUID:-1000}  # User ID
+      - PGID=${PGID:-1000}  # Group ID
+      - TZ=${TZ:-Africa/Johannesburg}  # Timezone
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "adguard"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping (if supported)
+      prometheus.port: "80"    # Prometheus port (AdGuard default)
+      prometheus.path: "/metrics"  # Prometheus metrics path (if enabled)
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.adguard.tls: "true"  # Enable TLS
+      traefik.http.routers.adguard.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.adguard.rule: "Host(`adman.cityzen.co.za`)"  # Domain routing rule
+      traefik.http.routers.adguard.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"  # Auth, relaxed headers, hide X-Powered-By
+      traefik.http.services.adguard.loadbalancer.server.port: "3000"
+
+  # -------------------------
+  # Duplicati (Backups)
+  # -------------------------
+  duplicati:
+    image: ${DUPLICATI_IMAGE:-lscr.io/linuxserver/duplicati:latest}
+    hostname: duplicati
+    container_name: duplicati
+    environment:
+      - PUID=${EPUID:-1000}  # User ID
+      - PGID=${EPGID:-1000}  # Group ID
+      - TZ=${TZ:-Africa/Johannesburg}  # Timezone
+      - SETTINGS_ENCRYPTION_KEY=${DUPLICATI_KEY}  # Backup encryption key
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:duplicati  # ThemePark mod
+      - TP_THEME=plex         # ThemePark theme
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/duplicati/config:/config    # Duplicati config
+      - ${DOCKERDIR:-/home/homelab/conf}/duplicati/backups:/backups  # Backup storage
+      - ${DOCKERDIR:-/home/homelab/conf}:/homelab/conf               # Homelab config reference
+    networks:
+      - internal
+      - external      
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "duplicati"  # Main app label for logging (Promtail/Loki)
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.duplicati.tls: "true"  # Enable TLS
+      traefik.http.routers.duplicati.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.duplicati.rule: "Host(`duplicati.cityzen.co.za`)"  # Domain routing rule
+      traefik.http.routers.duplicati.middlewares: "authelia@docker,no-poweredby@docker,even-less-secure-headers@docker"  # Auth, relaxed headers, hide X-Powered-By
+
+  # -------------------------
+  # Watchtower (Automated Docker Updates)
+  # -------------------------
+  watchtower:
+    image: ${WATCHTOWER_IMAGE:-containrrr/watchtower:latest}
+    container_name: watchtower
+    hostname: watchtower       
+    environment:
+      - TZ=${TZ:-Africa/Johannesburg}  # Timezone
+      - WATCHTOWER_ROLLING_RESTART=true  # Enable rolling restart
+      - WATCHTOWER_MONITOR_ONLY=false    # Set true for dry-run
+      - WATCHTOWER_SCHEDULE=0 0 6 * * ?  # Cron schedule for checks
+      - WATCHTOWER_CLEANUP=true          # Remove old images after update
+      - WATCHTOWER_NOTIFICATIONS=slack   # Notification type(s)
+      - WATCHTOWER_NOTIFICATION_SLACK_HOOK_URL=${WATCHTOWER_NOTIFICATION_DISCORD_HOOK_URL}  # Slack/Discord webhook
+      - WATCHTOWER_NOTIFICATION_SLACK_IDENTIFIER=${WATCHTOWER_MSG_NAME}  # Notification sender name
+      - DOCKER_HOST=tcp://socket-proxy:2375  # Use Docker socket proxy
+      - DOCKER_API_VERSION=1.48              # Docker API version
+      # - WATCHTOWER_HTTP_API_TOKEN=xxx      # (Optional) HTTP API auth token
+      # - DOCKER_CONFIG=/config              # (Optional) Custom Docker config path for private registry auth
+      # - REPO_USER=youruser                 # (Optional) Private registry username
+      # - REPO_PASS=yourpass                 # (Optional) Private registry password
+      # - WATCHTOWER_NO_RESTART=true         # (Optional) Disable container restarts after update
+      # - WATCHTOWER_SCOPE=myscope           # (Optional) Run multiple scoped Watchtower instances
+    networks:
+      - internal
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true     
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "watchtower"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping (if supported)
+      prometheus.port: "8080"    # Prometheus port (Watchtower default)
+      prometheus.path: "/metrics"  # Prometheus metrics path (if enabled)
+
+
+
+# =========================
+# NETWORKS
+# =========================
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

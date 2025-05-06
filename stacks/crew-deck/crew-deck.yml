@@ -1,0 +1,119 @@
+# =============================
+# CREW DECK STACK
+# =============================
+# Startpage and snippet management for your crew.
+# Each service is documented for clarity and maintainability.
+services:
+  # =========================
+  # Flame (Startpage)
+  # =========================
+  flame:
+    image: "${FLAME_IMAGE:-pawelmalak/flame:latest}"
+    container_name: flame
+    hostname: flame
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/flame/data:/app/data   # Persistent Flame data
+    environment:
+      - PUID=${PUID:-1000}            # User ID for file permissions
+      - PGID=${PGID:-1000}            # Group ID for file permissions
+      - PASSWORD=${FLAMEPASS}         # Web UI password (set in .env.example)
+      - TZ=${TZ:-Africa/Johannesburg} # Timezone
+    networks:
+      - external
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      # 🔀 Router Labels
+      traefik.enable: "true"                                   # Enable Traefik reverse proxy
+      traefik.docker.network: "external"                      # Traefik network
+      traefik.http.routers.flame.tls: "true"                  # Enable TLS
+      traefik.http.routers.flame.entrypoints: "https"          # HTTPS entrypoint
+      traefik.http.routers.flame.rule: "Host(`www.cityzen.co.za`)" # Domain routing rule (www)
+      traefik.http.routers.flame-root.rule: "Host(`cityzen.co.za`)" # Domain routing rule (root)
+      traefik.http.routers.flame.middlewares: "authelia@docker,no-poweredby@docker,flame-headers@docker" # Security middleware
+      # 🛡 Security Middleware
+      traefik.http.middlewares.flame-headers.headers.customResponseHeaders.X-Frame-Options: "SAMEORIGIN" # Security header
+      traefik.http.middlewares.flame-headers.headers.referrerPolicy: "strict-origin-when-cross-origin" # Security header
+      traefik.http.middlewares.flame-headers.headers.permissionsPolicy: "camera=(), microphone=(), geolocation=()" # Security header
+      traefik.http.middlewares.flame-headers.headers.contentSecurityPolicy: >- # CSP header
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' blob: https:;
+        style-src 'self' 'unsafe-inline' https:;
+        img-src 'self' data: blob: https:;
+        font-src 'self' data: https:;
+        connect-src 'self' https:;
+        frame-src 'self';
+        frame-ancestors 'self';
+        object-src 'none';
+        base-uri 'self';
+      log_name: "flame"                                        # Logging tag for this service
+
+
+  # =========================
+  # Snibox (Snippet Manager)
+  # =========================
+  snibox:
+    image: "${SNIBOX_IMAGE:-snowmean/snibox-sqlite:latest}"
+    container_name: snibox
+    hostname: snibox
+    environment:
+      # Environment variables with safe defaults
+      - PUID=${PUID:-1000}                # User ID for file permissions
+      - PGID=${PGID:-1000}                # Group ID for file permissions
+      - UMASK=${UMASK:-022}               # File permissions mask
+      - TZ=${TZ:-Africa/Johannesburg}     # Timezone
+      - GIT_HASH=${SNIBOX_GIT}            # Git hash/version identifier (optional)
+      # - SECRET_KEY_BASE=${SNIBOX_BASE}   # Uncomment and set for secret key base (recommended for production)
+    volumes:
+      - ${DOCKERDIR:-/home/homelab/conf}/snibox/db:/app/db/database:ro   # Persistent Snibox database (read-only)
+      - ${DOCKERDIR:-/home/homelab/conf}/snibox/config:/app/config:rw   # Persistent Snibox configuration (read-write)
+    networks:
+      - external
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      # No new privileges are required for this service
+      - no-new-privileges:true
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "snibox"  # Main app label for logging (Promtail/Loki)
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.snibox.tls: "true"  # Enable TLS
+      traefik.http.routers.snibox.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.snibox.rule: "Host(`snip.cityzen.co.za`)"  # Domain routing rule
+      # 🛡️ Middleware
+      traefik.http.routers.snibox.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker,snibox-headers@docker"  # Auth, relaxed headers, hide X-Powered-By, security headers
+      # 🔌 Service Port
+      traefik.http.services.snibox.loadbalancer.server.port: 8000  # Internal port for load balancing
+      # 🔒 Security Middleware
+      traefik.http.middlewares.snibox-headers.headers.customResponseHeaders.X-Frame-Options: "SAMEORIGIN" # Security header
+      traefik.http.middlewares.snibox-headers.headers.referrerPolicy: "strict-origin-when-cross-origin" # Security header
+      traefik.http.middlewares.snibox-headers.headers.permissionsPolicy: "camera=(), microphone=(), geolocation=()" # Security header
+      traefik.http.middlewares.snibox-headers.headers.contentSecurityPolicy: >- # CSP header
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' blob: https:;
+        style-src 'self' 'unsafe-inline' https:;
+        img-src 'self' data: blob: https:;
+        font-src 'self' data: https:;
+        connect-src 'self' https:;
+        frame-src 'self';
+        frame-ancestors 'self';
+        object-src 'none';
+        base-uri 'self';
+
+# =============================
+# NETWORKS
+# =============================
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}    # Internal network for stack services
+
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}    # External network for Traefik and cross-stack access

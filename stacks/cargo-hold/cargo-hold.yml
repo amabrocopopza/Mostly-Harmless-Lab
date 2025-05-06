@@ -1,0 +1,177 @@
+services:
+  # =========================
+  # MinIO Object Storage
+  # =========================
+  minio:
+    image: "${MINIO_IMAGE:-minio/minio:latest}"
+    container_name: minio
+    hostname: minio
+    command: server --console-address ":9001" /data
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}                 # MinIO root username (see .env.example)
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}         # MinIO root password (see .env.example)
+      - MINIO_DOMAIN=bucket.cityzen.co.za
+      - MINIO_CONFIG_DIR=/config                           # Config directory inside container
+      - MINIO_LOG_LEVEL=debug                              # Log level (debug for development)
+      - MINIO_BROWSER_REDIRECT_URL=https://bucket.cityzen.co.za # Redirect URL for browser (optional)
+    volumes:
+      # Data and configuration persistence
+      - ${DOCKERDATA}/data/minio/:/data
+      - ${DOCKERDIR}/minio/config:/config
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - external
+      - internal
+    restart: ${RESTART:-unless-stopped}
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "minio"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping (if supported)
+      prometheus.port: "9000"    # Prometheus port (MinIO default)
+      prometheus.path: "/minio/prometheus/metrics"  # Prometheus metrics path (if enabled)
+
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+
+      # 🖥️ Minio Console (UI)
+      traefik.http.routers.minio-console.entrypoints: "https"  # HTTPS entrypoint for console
+      traefik.http.routers.minio-console.rule: "Host(`bucket.cityzen.co.za`)"  # Console domain routing rule
+      traefik.http.routers.minio-console.service: "minio-console"  # Traefik service name for console
+      traefik.http.routers.minio-console.middlewares: "authelia@docker,even-less-secure-headers@docker"  # Auth and relaxed headers
+      traefik.http.services.minio-console.loadbalancer.server.port: 9001  # Console internal port
+
+      # ⚙️ Minio API
+      traefik.http.routers.minio-api.entrypoints: "https"  # HTTPS entrypoint for API
+      traefik.http.routers.minio-api.rule: "Host(`bucket-api.cityzen.co.za`)"  # API domain routing rule
+      traefik.http.routers.minio-api.service: "minio-api"  # Traefik service name for API
+      traefik.http.routers.minio-api.middlewares: "authelia@docker,even-less-secure-headers@docker"  # Auth and relaxed headers
+      traefik.http.services.minio-api.loadbalancer.server.port: 9000  # API internal port
+
+      # ⚡️ Minio API (per-bucket subdomain wildcard)
+      traefik.http.routers.minio-bucket.entrypoints: "https"
+      traefik.http.routers.minio-bucket.rule: "HostRegexp(`{bucket:[a-zA-Z0-9-]+}.bucket.cityzen.co.za`)"
+      traefik.http.routers.minio-bucket.service: "minio-api"
+      traefik.http.routers.minio-bucket.middlewares: "authelia@docker,even-less-secure-headers@docker"
+ 
+    # 🚨 General, reliable healthcheck for MinIO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/minio/health/ready"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # =========================
+  # Infisical (Secrets Management)
+  # =========================
+  infisical:
+    image: "${INFISICAL_IMAGE:-infisical/infisical:latest}"
+    container_name: infisical
+    hostname: infisical
+    environment:
+      - NODE_ENV=production                            # Node environment (production/development)
+      - REDIS_URL=${INFISICAL_REDIS_URL}               # Redis connection URL for session/cache
+      - AUTH_SECRET=${INFISICAL_AUTH_SECRET}           # Secret key for authentication (keep secure)
+      - ENCRYPTION_KEY=${INFISICAL_ENCRYPTION_KEY}     # Key for encrypting secrets (keep secure)
+      - SMTP_HOST=smtp.sendgrid.net                    # SMTP server hostname for email
+      - SMTP_PORT=587                                  # SMTP server port
+      - SMTP_FROM_ADDRESS=${INFISICAL_SMTP_FROM_ADDRESS} # Email address for outgoing mail
+      - SMTP_FROM_NAME=${INFISICAL_SMTP_FROM_NAME}     # Display name for outgoing mail
+      - SMTP_USERNAME=${INFISICAL_SMTP_USERNAME}       # SMTP server username
+      - SMTP_PASSWORD=${INFISICAL_SMTP_PASSWORD}       # SMTP server password (keep secure)
+      - DB_CONNECTION_URI=${INFISICAL_DATABASE_URL}         # Database connection string (Postgres URI)
+      - POSTGRES_PASSWORD=${INFISICAL_POSTGRES_PASSWORD} # Password for Postgres user (keep secure)
+      - POSTGRES_USER=${INFISICAL_POSTGRES_USER}       # Username for Postgres database
+      - POSTGRES_DB=${INFISICAL_POSTGRES_DB}           # Database name for Infisical
+      - REDIS_PASS=${INFISICAL_REDIS_PASS}             # Redis password (keep secure)
+      - OTEL_EXPORT_TYPE=prometheus                     # OpenTelemetry export type (e.g., otlp)
+      - OTEL_TELEMETRY=true                             # Enable/disable telemetry (true/false)
+      - TZ=${TZ:-Africa/Johannesburg}                   # Timezone for the container
+      - PUID=${PUID:-1000}                              # User ID for file permissions
+      - PGID=${PGID:-1000}                              # Group ID for file permissions
+    volumes:
+      - ${DOCKERDIR}/infisical:/app/config:ro  # read-only if Infisical only reads config
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - external
+      - internal
+    restart: ${RESTART:-unless-stopped}
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "infisical"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping (if supported)
+      prometheus.port: "8080"    # Prometheus port (Infisical default)
+      prometheus.path: "/metrics"  # Prometheus metrics path (if enabled)
+
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+
+      # 🔐 Infisical Web UI & API
+      traefik.http.routers.infisical.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.infisical.rule: "Host(`secrets.cityzen.co.za`)"  # Domain routing rule
+      traefik.http.routers.infisical.service: "infisical"  # Traefik service name
+      traefik.http.routers.infisical.middlewares: "authelia@docker,even-less-secure-headers@docker"  # Auth and relaxed headers
+      traefik.http.services.infisical.loadbalancer.server.port: 8080  # Internal port for load balancing
+    # 🚨 Healthcheck for Infisical web API
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # =========================
+  # FileGator File Manager
+  # =========================
+  filegator:
+    image: "${FILEGATOR_IMAGE:-filegator/filegator:latest}"
+    container_name: filegator
+    hostname: filegator
+    volumes:
+      - ${FILEGATOR_SHARED_FOLDER}:/var/www/filegator/repository:ro   # Shared folder mount (read-only for serving files only)
+      - ${DOCKERDIR}/filegator/private:/var/www/filegator/private  # Private config
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - external
+    restart: ${RESTART:-unless-stopped}
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "infisical"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping (if supported)
+      prometheus.port: "8080"    # Prometheus port (Infisical default)
+      prometheus.path: "/metrics"  # Prometheus metrics path (if enabled)
+
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+
+      # 🗝️ Infisical Web UI
+      traefik.http.routers.infisical.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.infisical.rule: "Host(`secrets.cityzen.co.za`)"  # Domain routing rule
+      traefik.http.routers.infisical.service: "infisical"  # Traefik service name
+      traefik.http.routers.infisical.middlewares: "authelia@docker,even-less-secure-headers@docker"  # Auth and relaxed headers
+      traefik.http.services.infisical.loadbalancer.server.port: 8080  # Internal port for load balancing
+    # 🚨 Healthcheck for FileGator web UI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}
+
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}

@@ -1,0 +1,118 @@
+# Authelia Example Configuration for cityzen.co.za
+# This file is a safe, ready-to-launch example for the Shield Array stack.
+# Change all secrets and SMTP credentials before production!
+
+# Theme and Identity
+theme: dark
+identity_validation:
+  reset_password:
+    jwt_secret: AUTHELIA-ChAnGeM3#
+
+telemetry:
+  metrics:
+    enabled: true
+    address: "tcp://0.0.0.0:9959"
+
+server:
+  address: tcp://0.0.0.0:9091/
+  endpoints:
+    enable_pprof: false
+    enable_expvars: false
+  buffers:
+    read: 4096
+    write: 4096
+  disable_healthcheck: false
+  tls:
+    key: ""
+    certificate: ""
+
+log:
+  level: info
+  format: text
+  file_path: "/logs/authelia.log"
+
+totp:
+  issuer: cityzen.co.za
+  period: 30
+  skew: 1
+
+authentication_backend:
+  password_reset:
+    disable: false
+  refresh_interval: 5m
+  file:
+    path: /config/users_database.yml
+    password:
+      algorithm: argon2id
+      iterations: 1
+      key_length: 32
+      salt_length: 16
+      memory: 1024
+      parallelism: 8
+
+access_control:
+  default_policy: deny
+  rules:
+    - domain: "auth.cityzen.co.za"
+      policy: bypass
+    - domain: "www.cityzen.co.za"
+      policy: bypass
+    - domain: "status.cityzen.co.za"
+      policy: bypass
+    - domain: "home.cityzen.co.za"
+      policy: bypass
+    - domain: "plex.cityzen.co.za"
+      policy: bypass
+    - domain: "zap.cityzen.co.za"
+      policy: bypass
+    - domain: "hook.cityzen.co.za"
+      resources:
+        - "^/webhook/imperial_alert_matrix$"
+      policy: bypass
+    - domain: "hook.cityzen.co.za"
+      resources:
+        - "^/webhook-test/imperial_alert_matrix$"
+      policy: bypass
+    - domain: "*.cityzen.co.za"
+      policy: bypass
+      networks:
+        - 192.168.101.0/24
+        - 172.18.0.0/16
+    - domain: "*.cityzen.co.za"
+      policy: two_factor
+
+session:
+  name: authelia_session
+  secret: AUTHELIA-ChAnGeM3#
+  expiration: 3600
+  inactivity: 1800
+  cookies:
+    - domain: cityzen.co.za
+      authelia_url: https://auth.cityzen.co.za
+      default_redirection_url: https://cityzen.co.za
+
+regulation:
+  max_retries: 4
+  find_time: 10m
+  ban_time: 12h
+
+storage:
+  local:
+    path: /config/db.sqlite3
+  encryption_key: AUTHELIA-ChAnGeM3#
+
+notifier:
+  disable_startup_check: true
+  smtp:
+    address: submissions://smtp.sendgrid.net:465
+    username: apikey
+    password: AUTHELIA-ChAnGeM3#
+    sender: noreply@cityzen.co.za
+    identifier: localhost
+    subject: "[Authelia] {title}"
+    startup_check_address: noreply@cityzen.co.za
+    disable_require_tls: false
+    disable_html_emails: false
+    tls:
+      skip_verify: false
+      minimum_version: TLS1.2

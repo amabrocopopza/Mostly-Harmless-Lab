@@ -1,0 +1,12 @@
+# Authelia users_database.yml example
+# Password for 'admin' is: Ifeel2StupidForNotChangingThis
+# Generated using Argon2id (see docs for details)
+
+users:
+  admin:
+    displayname: "Administrator"
+    password: "$argon2id$v=19$m=65536,t=3,p=2$7n7k7T2v1Q4yBf4k$2JZ6hK4VZyH5QwT1n5p1nQ"  # Password: Ifeel2StupidForNotChangingThis
+    email: admin@example.com
+    groups:
+      - admins
+      - dev

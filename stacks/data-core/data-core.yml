@@ -1,0 +1,190 @@
+# =============================
+# DATA CORE STACK
+# =============================
+# Centralized databases and admin tools for the Homelab.
+# Each service is documented for clarity and maintainability.
+services:
+  # =========================
+  # Spocknet (PostgreSQL Database)
+  # =========================
+  spocknet:
+    image: "${POSTGRES_IMAGE:-postgres:16.2}"
+    container_name: spocknet
+    hostname: spocknet
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /home/homelab/databases/postgres/spoknet:/var/lib/postgresql/data   # Persistent PostgreSQL data
+    environment:
+      # === Standard Service Environment ===
+      - PUID="${PUID:-1000}"                    # User ID for file permissions
+      - PGID="${PGID:-1000}"                    # Group ID for file permissions
+      - UMASK="${UMASK:-002}"                   # File creation mask (shared files)
+      - TZ="${TZ:-Africa/Johannesburg}"         # Timezone
+      # === PostgreSQL Admin Credentials ===
+      - POSTGRES_ADMIN_USER="${POSTGRES_ADMIN_USER:-spocknet_spok}"           # Admin username (superuser)
+      - POSTGRES_ADMIN_PASSWORD="${POSTGRES_ADMIN_PASSWORD:-Gj$7pLrT2f!wVxB9qMzk@1sC}"   # Admin password (superuser)
+      - POSTGRES_ADMIN_DB="${POSTGRES_ADMIN_DB:-postgres}"               # Admin DB name (default database)
+      # === Application DB User ===
+      - POSTGRES_USER="${POSTGRES_USER:-postgres}"                       # Application DB user
+      - POSTGRES_PASSWORD="${POSTGRES_USER_PASSWORD:-tK2#VmF8qNz!WsJ6@dPL}"               # Application DB user password
+    networks:
+      - internal
+      - external
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "spocknet"  # Main app label for logging (Promtail/Loki)
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.spocknet.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.spocknet.tls: "true"  # Enable TLS
+      traefik.http.routers.spocknet.rule: "Host(`spocknet.cityzen.co.za`)"  # Domain routing rule
+      # 🛡️ Middleware
+      traefik.http.routers.spocknet.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"  # Auth, relaxed headers, hide X-Powered-By
+      # 🔌 Service Port
+      traefik.http.services.spocknet.loadbalancer.server.port: 5432  # Internal port for load balancing
+      traefik.http.services.spocknet.service: "spocknet"  # Traefik service name
+
+      
+
+      
+
+ 
+
+  # =========================
+  # Qdrant (Vector Database)
+  # =========================
+  qdrant:
+    image: "${QDRANT_IMAGE:-qdrant/qdrant:gpu-nvidia-latest}"
+    container_name: qdrant
+    hostname: qdrant
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    volumes:
+      - /home/homelab/databases/qdrant/data:/qdrant/storage   # Persistent Qdrant data
+    networks:
+      - internal
+      - external
+    environment:
+      # === Standard Service Environment ===
+      - PUID="${PUID:-1000}"                    # User ID for file permissions
+      - PGID="${PGID:-1000}"                    # Group ID for file permissions
+      - UMASK="${UMASK:-002}"                   # File creation mask (shared files)
+      - TZ="${TZ:-Africa/Johannesburg}"         # Timezone
+      # === Qdrant Configuration ===
+      - QDRANT__GPU__INDEXING=true                           # Enable GPU indexing (NVIDIA only)
+      - UMASK_SET=002
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      # === NVIDIA GPU Deployment ===
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia         # Use all available NVIDIA GPUs
+              count: all
+              capabilities: [gpu]
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "qdrant"                                      # Main app label for logging (Promtail/Loki)
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"                                   # Enable Traefik reverse proxy
+      traefik.docker.network: "external"                       # Traefik network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.qdrant.entrypoints: "https"         # HTTPS entrypoint
+      traefik.http.routers.qdrant.tls: "true"                  # Enable TLS
+      traefik.http.routers.qdrant.rule: "Host(`qdrant.cityzen.co.za`)" # Domain routing rule
+      # 🛡️ Middleware
+      traefik.http.routers.qdrant.middlewares: "authelia@docker,secure-headers@docker,no-poweredby@docker" # Auth, secure headers, hide X-Powered-By
+      # 🔌 Service Port
+      traefik.http.services.qdrant.loadbalancer.server.port: "6333" # Qdrant HTTP port
+
+  # =========================
+  # Redis (Key-Value Store)
+  # =========================
+  redis:
+    image: "${REDIS_IMAGE:-redis:7.4.3}"
+    container_name: redis
+    hostname: redis
+    restart: ${RESTART:-unless-stopped}
+    command: redis-server --save 900 1 --save 300 10 --save 60 10000 --appendonly yes --dir /data --requirepass ${INFISICAL_REDIS_PASS} # Enable AOF, set save intervals, require password
+    environment:
+      - UMASK_SET=002
+      - ALLOW_EMPTY_PASSWORD=false    # Enforce password usage
+    volumes:
+      - /home/homelab/databases/redis/data:/data   # Persistent Redis data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"] # Official Redis healthcheck
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # =========================
+  # phpMyAdmin (DB Admin Tool)
+  # =========================
+  phpmyadmin:
+    image: "${PHPMYADMIN_IMAGE:-phpmyadmin:latest}"
+    container_name: phpmyadmin
+    hostname: phpmyadmin
+    restart: ${RESTART:-unless-stopped}
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /home/homelab/databases/phpmyadmin/config:/etc/phpmyadmin/config.user.inc.php:ro   # Persistent phpMyAdmin config
+      - /home/homelab/databases/phpmyadmin/uploads:/var/www/html/uploads:rw   # Persistent phpMyAdmin uploads
+    environment:
+      # === Standard Service Environment ===
+      - PUID="${PUID:-1000}"                    # User ID for file permissions
+      - PGID="${PGID:-1000}"                    # Group ID for file permissions
+      - UMASK="${UMASK:-002}"                   # File creation mask (shared files)
+      - TZ="${TZ:-Africa/Johannesburg}"         # Timezone
+      # === phpMyAdmin Configuration ===
+      - PMA_ARBITRARY=1                        # Allow connection to any MySQL/MariaDB server
+      - PMA_ABSOLUTE_URI="https://www.dbadmin.cityzen.co.za"  # Absolute URI for phpMyAdmin
+    networks:
+      - internal
+    labels:
+      # 📹 Logging/Monitoring
+      log_name: "phpmyadmin"  # Main app label for logging (Promtail/Loki)
+      prometheus.scrape: "true"  # Enable Prometheus scraping (if supported)
+      prometheus.port: "80"    # Prometheus port (phpMyAdmin default)
+      prometheus.path: "/metrics"  # Prometheus metrics path (if enabled)
+      # 🚀 Traefik Enablement
+      traefik.enable: "true"  # Enable Traefik reverse proxy for this service
+      traefik.docker.network: "external"  # Traefik should use the external network
+      # 🎯 Traefik Routing/Rules
+      traefik.http.routers.phpmyadmin.entrypoints: "https"  # HTTPS entrypoint
+      traefik.http.routers.phpmyadmin.tls: "true"  # Enable TLS
+      traefik.http.routers.phpmyadmin.rule: "Host(`dbadmin.cityzen.co.za`)"  # Domain routing rule
+      traefik.http.routers.phpmyadmin.service: "phpmyadmin"  # Traefik service name
+      # 🛡️ Middleware
+      traefik.http.routers.phpmyadmin.middlewares: "authelia@docker,even-less-secure-headers@docker,no-poweredby@docker"  # Auth, relaxed headers, hide X-Powered-By
+      # 🔌 Service Port
+      traefik.http.services.phpmyadmin.loadbalancer.server.port: 80  # Internal port for load balancing
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"] # Official phpMyAdmin healthcheck
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+# =============================
+# NETWORKS
+# =============================
+networks:
+  internal:
+    external: true
+    name: ${INTERNAL_NETWORK:-internal}    # Internal network for stack services
+
+  external:
+    external: true
+    name: ${EXTERNAL_NETWORK:-external}    # External network for Traefik and cross-stack access
+
