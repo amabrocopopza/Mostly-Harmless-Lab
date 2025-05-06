@@ -160,12 +160,42 @@ services:
       traefik.http.routers.infisical.middlewares: "authelia@docker,even-less-secure-headers@docker"  # Auth and relaxed headers
       traefik.http.services.infisical.loadbalancer.server.port: 8080  # Internal port for load balancing
     # 🚨 Healthcheck for FileGator web UI
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
-      interval: 1m30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+
+  waha:
+    image: devlikeapro/waha-plus
+    container_name: waha
+    hostname: waha
+    restart: ${RESTART:-unless-stopped}
+    volumes:
+      - '${DOCKERDIR:-/home/homelab/conf}/whatsapp:/app/.sessions'
+      - '${MEDIALIBRARY:-/mnt/pool/library}/media/whatsapp:/app/.media'
+    environment:
+      WHATSAPP_API_HOSTNAME: ${WHATSAPP_API_HOSTNAME:-whatsapp.cityzen.co.za}
+      WAHA_BASE_URL: ${WAHA_BASE_URL:-https://whatsapp.cityzen.co.za}
+      WAHA_DEBUG_MODE: "false"
+      TZ: ${TZ:-Africa/Johannesburg}
+      WAHA_LOG_FORMAT: ${WAHA_LOG_FORMAT:-JSON}
+      WAHA_LOG_LEVEL: ${WAHA_LOG_LEVEL:-info}
+      WAHA_HTTP_LOG_LEVEL: ${WAHA_HTTP_LOG_LEVEL:-info}
+      WAHA_AUTO_START_DELAY_SECONDS: ${WAHA_AUTO_START_DELAY_SECONDS:-5}
+      WAHA_PRINT_QR: ${WAHA_PRINT_QR:-false}
+      WAHA_WORKER_ID: ${WAHA_WORKER_ID:-whatsapple}
+      WHATSAPP_RESTART_ALL_SESSIONS: ${WHATSAPP_RESTART_ALL_SESSIONS:-true}
+      WHATSAPP_DEFAULT_ENGINE: ${WHATSAPP_DEFAULT_ENGINE:-NOWEB}
+      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY}
+      WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD}
+      WHATSAPP_SWAGGER_USERNAME: ${WHATSAPP_SWAGGER_USERNAME}
+      WHATSAPP_SWAGGER_PASSWORD: ${WHATSAPP_SWAGGER_PASSWORD}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.waha.rule=Host(`whatsapp.cityzen.co.za`)"
+      - "traefik.http.routers.waha.entrypoints=https"
+      - "traefik.http.routers.waha.tls=true"
+      - "traefik.http.services.waha.loadbalancer.server.port=3000"
+      - "traefik.http.routers.waha.middlewares=authelia@docker" 
+    networks:
+      - external
 
 networks:
   internal:
